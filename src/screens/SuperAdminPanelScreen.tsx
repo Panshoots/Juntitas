@@ -28,6 +28,7 @@ import {
   getCommunities 
 } from '../services/communityService';
 import { getAuditLogs } from '../services/auditService';
+import { resetEntireApp, seedRealisticData } from '../services/seedService';
 
 type CrmTab = 'users' | 'communities' | 'businesses' | 'audit';
 
@@ -141,6 +142,25 @@ export const SuperAdminPanelScreen: React.FC = () => {
     loadAllCrmData();
   };
 
+  const handleResetApp = async () => {
+    const confirmReset = window ? window.confirm('⚠️ ¿Estás seguro de que deseas VACIAR TODA LA APLICACIÓN? Se eliminarán todos los usuarios de prueba, comunidades, juntas y tiendas, dejando la app en blanco.') : true;
+    if (!confirmReset) return;
+
+    setLoading(true);
+    const res = await resetEntireApp(currentUser.id);
+    setLoading(false);
+    alert(res.message);
+    loadAllCrmData();
+  };
+
+  const handleSeedData = async () => {
+    setLoading(true);
+    const res = await seedRealisticData(currentUser.id);
+    setLoading(false);
+    alert(res.message);
+    loadAllCrmData();
+  };
+
   // Filtrado de usuarios
   const filteredUsers = users.filter(u => {
     const matchesSearch = u.displayName.toLowerCase().includes(userSearch.toLowerCase()) || 
@@ -166,13 +186,34 @@ export const SuperAdminPanelScreen: React.FC = () => {
         <View>
           <View style={styles.badgeAdmin}>
             <Ionicons name="shield-checkmark" size={14} color="#EF4444" />
-            <Text style={styles.badgeAdminText}>Panel CRM Super Administrador</Text>
+            <Text style={styles.badgeAdminText}>Super Admin: Francisco Juillet</Text>
           </View>
-          <Text style={styles.title}>Control Global de Plataforma</Text>
+          <Text style={styles.title}>Panel CRM & Control Global</Text>
         </View>
 
         <TouchableOpacity style={styles.reloadBtn} onPress={loadAllCrmData}>
           <Ionicons name="refresh" size={18} color="#0284C7" />
+        </TouchableOpacity>
+      </View>
+
+      {/* Barra de Gestión de Datos de la Base de Datos */}
+      <View style={styles.databaseToolbar}>
+        <TouchableOpacity 
+          style={[styles.dbActionBtn, styles.dbResetBtn]} 
+          onPress={handleResetApp}
+          disabled={loading}
+        >
+          <Ionicons name="trash-bin" size={15} color="#DC2626" />
+          <Text style={styles.dbResetText}>Vaciar Toda la App</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity 
+          style={[styles.dbActionBtn, styles.dbSeedBtn]} 
+          onPress={handleSeedData}
+          disabled={loading}
+        >
+          <Ionicons name="sparkles" size={15} color="#15803D" />
+          <Text style={styles.dbSeedText}>Poblar 10 Usuarios & 4 Tiendas</Text>
         </TouchableOpacity>
       </View>
 
@@ -964,4 +1005,40 @@ const styles = StyleSheet.create({
     color: '#1E293B',
     fontWeight: '600',
   },
+  databaseToolbar: {
+    flexDirection: 'row',
+    gap: 10,
+    paddingHorizontal: 16,
+    paddingBottom: 12,
+  },
+  dbActionBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderRadius: 12,
+    borderWidth: 1.5,
+  },
+  dbResetBtn: {
+    backgroundColor: '#FEF2F2',
+    borderColor: '#FECACA',
+  },
+  dbResetText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#DC2626',
+  },
+  dbSeedBtn: {
+    backgroundColor: '#F0FDF4',
+    borderColor: '#BBF7D0',
+  },
+  dbSeedText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#15803D',
+  },
 });
+

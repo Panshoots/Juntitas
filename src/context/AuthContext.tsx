@@ -27,10 +27,10 @@ export interface ActiveProfileInfo {
 
 export const SUPER_ADMIN_USER: AppUser = {
   id: 'user-superadmin',
-  displayName: 'Rodrigo Fuentes (SuperAdmin)',
-  email: 'admin.global@juntitas.app',
-  photoURL: 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=400',
-  bio: 'Super Administrador global de Juntitas.',
+  displayName: 'Francisco Juillet (SuperAdmin)',
+  email: 'admin@juntitas.app',
+  photoURL: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=400',
+  bio: 'Super Administrador Supremo de la plataforma Juntitas.',
   roleType: 'super_admin',
   location: { region: 'Metropolitana', comuna: 'Santiago' },
   contact: { phone: '+56 9 9999 8888', isPublic: false },

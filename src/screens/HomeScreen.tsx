@@ -10,7 +10,11 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
-import { rollSurprisePaw } from '../services/gamificationService';
+import { 
+  rollSurprisePawWithCooldown, 
+  getRemainingCooldown, 
+  formatCooldown 
+} from '../services/gamificationService';
 import { SurprisePawModal } from '../components/SurprisePawModal';
 import { SurprisePawReward } from '../models/Gamification';
 import { useAuth } from '../context/AuthContext';
@@ -22,11 +26,29 @@ export const HomeScreen: React.FC = () => {
 
   const [pawBalance, setPawBalance] = useState(currentUser.pawBalance || 100);
   const [surpriseReward, setSurpriseReward] = useState<SurprisePawReward | null>(null);
+  const [cooldownRemaining, setCooldownRemaining] = useState<number>(0);
   const [showSurpriseModal, setShowSurpriseModal] = useState(false);
 
+  // Comprobar cooldown cada segundo
+  useEffect(() => {
+    const updateCd = () => {
+      const remaining = getRemainingCooldown(currentUser.id);
+      setCooldownRemaining(remaining);
+    };
+    updateCd();
+    const interval = setInterval(updateCd, 1000);
+    return () => clearInterval(interval);
+  }, [currentUser.id]);
+
   const handleTestSurprisePaw = () => {
-    const reward = rollSurprisePaw();
-    setSurpriseReward(reward);
+    const res = rollSurprisePawWithCooldown(currentUser.id);
+    if (res.success && res.reward) {
+      setSurpriseReward(res.reward);
+      setCooldownRemaining(0);
+    } else {
+      setSurpriseReward(null);
+      setCooldownRemaining(res.remainingMs || 1000);
+    }
     setShowSurpriseModal(true);
   };
 
@@ -122,15 +144,21 @@ export const HomeScreen: React.FC = () => {
         </TouchableOpacity>
 
         <TouchableOpacity 
-          style={styles.actionCard}
+          style={[styles.actionCard, cooldownRemaining > 0 && { borderColor: '#FCD34D' }]}
           onPress={handleTestSurprisePaw}
           activeOpacity={0.85}
         >
-          <View style={[styles.iconCircle, { backgroundColor: '#F3E8FF' }]}>
-            <Ionicons name="help-buoy" size={26} color="#7E22CE" />
+          <View style={[styles.iconCircle, { backgroundColor: cooldownRemaining > 0 ? '#FEF3C7' : '#F3E8FF' }]}>
+            <Ionicons 
+              name={cooldownRemaining > 0 ? "hourglass" : "help-buoy"} 
+              size={26} 
+              color={cooldownRemaining > 0 ? "#D97706" : "#7E22CE"} 
+            />
           </View>
           <Text style={styles.actionTitle}>Huella Sorpresa</Text>
-          <Text style={styles.actionSub}>¡Probar suerte aleatoria!</Text>
+          <Text style={[styles.actionSub, cooldownRemaining > 0 && { color: '#B45309', fontWeight: 'bold' }]}>
+            {cooldownRemaining > 0 ? formatCooldown(cooldownRemaining) : '¡Tirada disponible!'}
+          </Text>
         </TouchableOpacity>
       </View>
 
@@ -175,6 +203,7 @@ export const HomeScreen: React.FC = () => {
       <SurprisePawModal 
         visible={showSurpriseModal}
         reward={surpriseReward}
+        cooldownMs={cooldownRemaining}
         onClose={handleClaimReward}
       />
     </ScrollView>
