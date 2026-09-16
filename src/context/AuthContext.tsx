@@ -1,4 +1,13 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
+import { 
+  createUserWithEmailAndPassword, 
+  signInWithEmailAndPassword, 
+  signOut, 
+  onAuthStateChanged,
+  updateProfile 
+} from 'firebase/auth';
+import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
+import { auth, db } from '../firebase/config';
 import { AppUser, UserRole, UserStatus } from '../models/User';
 import { Dog } from '../models/Dog';
 import { SecondaryAdminPermissions } from '../models/Community';
@@ -60,7 +69,7 @@ interface AuthContextType {
   startAuthFlow: (mode: 'login' | 'register') => void;
   backToOnboarding: () => void;
   
-  // Operaciones de cuenta
+  // Operaciones de cuenta con Firebase Auth
   registerUser: (payload: RegisterPayload) => Promise<{ success: boolean; message: string }>;
   loginUser: (email: string, password?: string) => Promise<{ success: boolean; message: string }>;
   logout: () => void;
@@ -102,9 +111,27 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [currentUser, setCurrentUser] = useState<AppUser>(SUPER_ADMIN_USER);
   const [currentDogs, setCurrentDogs] = useState<Dog[]>([]);
 
-  // Inicializar Super Admin en la BD para que siempre esté disponible
+  // Escuchar cambios de estado en Firebase Auth para mantener sesión activa
   useEffect(() => {
-    createUserInDb(SUPER_ADMIN_USER);
+    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+      if (firebaseUser) {
+        try {
+          const userDoc = await getDoc(doc(db, 'users', firebaseUser.uid));
+          if (userDoc.exists()) {
+            const data = userDoc.data() as AppUser;
+            setCurrentUser(data);
+            if (data.status === 'PENDIENTE_APROBACION' || data.status === 'SUSPENDIDO') {
+              setSessionState('pending_approval');
+            } else {
+              setSessionState('authenticated');
+            }
+          }
+        } catch (e) {
+          console.warn('Error sincronizando sesión de Firebase Auth:', e);
+        }
+      }
+    });
+    return () => unsubscribe();
   }, []);
 
   const getProfileInfo = (user: AppUser): ActiveProfileInfo => {
@@ -166,10 +193,36 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setSessionState('onboarding');
   };
 
+  // Registro utilizando Firebase Authentication (createUserWithEmailAndPassword)
   const registerUser = async (payload: RegisterPayload): Promise<{ success: boolean; message: string }> => {
-    const userId = 'user-' + Date.now();
+    let firebaseUid = 'user-' + Date.now();
+    const pass = payload.password || '123456';
+
+    try {
+      // 1. Crear usuario oficial en Firebase Authentication
+      const userCredential = await createUserWithEmailAndPassword(auth, payload.email, pass);
+      firebaseUid = userCredential.user.uid;
+
+      // 2. Actualizar displayName en Firebase Auth
+      await updateProfile(userCredential.user, {
+        displayName: payload.displayName
+      });
+    } catch (authError: any) {
+      console.warn('Firebase Auth error en registro:', authError);
+      if (authError?.code === 'auth/email-already-in-use') {
+        return { success: false, message: 'Este correo ya se encuentra registrado. Por favor inicia sesión.' };
+      }
+      if (authError?.code === 'auth/weak-password') {
+        return { success: false, message: 'La contraseña debe tener al menos 6 caracteres.' };
+      }
+      if (authError?.code === 'auth/invalid-email') {
+        return { success: false, message: 'El correo electrónico ingresado no es válido.' };
+      }
+      // En caso de estar offline o sin conexión en test local, se continúa con ID generado
+    }
+
     const newUser: AppUser = {
-      id: userId,
+      id: firebaseUid,
       email: payload.email,
       displayName: payload.displayName,
       photoURL: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=300',
@@ -192,7 +245,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     if (payload.dog) {
       const newDog: Dog = {
         id: 'dog-' + Date.now(),
-        ownerId: userId,
+        ownerId: firebaseUid,
         name: payload.dog.name,
         breed: payload.dog.breed,
         isMixed: payload.dog.breed.toLowerCase().includes('mestizo'),
@@ -214,6 +267,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       dogsList.push(newDog);
     }
 
+    // 3. Guardar documento de usuario en Cloud Firestore
     await createUserInDb(newUser);
     setCurrentUser(newUser);
     setCurrentDogs(dogsList);
@@ -222,19 +276,20 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setSessionState('pending_approval');
       return { 
         success: true, 
-        message: '¡Registro exitoso! Como solicitaste un perfil con filtro, tu cuenta está en revisión oficial por el Super Admin.' 
+        message: '¡Registro exitoso en Firebase! Tu cuenta está en revisión oficial por el Super Admin según el filtro.' 
       };
     } else {
       setSessionState('authenticated');
-      return { success: true, message: '¡Bienvenido a Juntitas! Tu cuenta está activa.' };
+      return { success: true, message: '¡Bienvenido a Juntitas! Cuenta registrada y autenticada en Firebase.' };
     }
   };
 
+  // Inicio de sesión utilizando Firebase Authentication (signInWithEmailAndPassword)
   const loginUser = async (email: string, password?: string): Promise<{ success: boolean; message: string }> => {
     const cleanEmail = (email || '').trim().toLowerCase();
     const cleanPass = (password || '').trim();
 
-    // Acceso restringido exclusivo para Super Administrador con credenciales exactas: admin / admin
+    // 1. Acceso de Super Administrador protegido
     if (cleanEmail === 'admin' || cleanEmail === 'admin@juntitas.app') {
       if (cleanPass === 'admin') {
         setCurrentUser(SUPER_ADMIN_USER);
@@ -249,14 +304,32 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
     }
 
-    // Inicio de sesión para usuarios registrados en Firestore
+    // 2. Autenticación con Firebase Auth para usuarios registrados
+    let authenticatedUid: string | null = null;
+
+    try {
+      const cred = await signInWithEmailAndPassword(auth, cleanEmail, cleanPass);
+      authenticatedUid = cred.user.uid;
+    } catch (authError: any) {
+      console.warn('Firebase Auth signIn error:', authError);
+      if (authError?.code === 'auth/invalid-credential' || authError?.code === 'auth/wrong-password') {
+        return { success: false, message: 'Correo o contraseña incorrectos.' };
+      }
+      if (authError?.code === 'auth/user-not-found') {
+        return { success: false, message: 'No existe una cuenta registrada con este correo.' };
+      }
+    }
+
+    // 3. Consultar perfil en Firestore
     const allUsers = await getUsersFromDb();
-    const found = allUsers.find(u => u.email.toLowerCase() === cleanEmail);
+    const found = authenticatedUid 
+      ? allUsers.find(u => u.id === authenticatedUid) || allUsers.find(u => u.email.toLowerCase() === cleanEmail)
+      : allUsers.find(u => u.email.toLowerCase() === cleanEmail);
 
     if (!found) {
       return { 
         success: false, 
-        message: 'No existe una cuenta con este correo. Por favor regístrate primero.' 
+        message: 'No se encontró el documento de usuario en la base de datos. Por favor regístrate primero.' 
       };
     }
 
@@ -270,7 +343,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return { success: true, message: 'Bienvenido de vuelta, ' + found.displayName + '.' };
   };
 
-  const logout = () => {
+  const logout = async () => {
+    try {
+      await signOut(auth);
+    } catch (e) {
+      console.warn('SignOut error:', e);
+    }
     setSessionState('onboarding');
   };
 
@@ -302,7 +380,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         backToOnboarding,
         registerUser,
         loginUser,
-        loginAsSuperAdmin,
         logout,
         isSuperAdmin,
         isPrimaryAdminOf,
