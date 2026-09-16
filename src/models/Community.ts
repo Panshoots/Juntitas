@@ -1,0 +1,61 @@
+export type CommunityRole = 'primary_admin' | 'secondary_admin' | 'member';
+
+export interface SecondaryAdminPermissions {
+  canCreateEvents: boolean;
+  canEditEvents: boolean;
+  canManageMembers: boolean;
+  canModeratePosts: boolean;
+  canManageAlbums: boolean;
+  canManageVendors: boolean;
+}
+
+export interface CommunityMember {
+  userId: string;
+  role: CommunityRole;
+  permissions?: SecondaryAdminPermissions;
+  joinedAt: any;
+}
+
+export type CommunityStatus = 'pending' | 'more_info_needed' | 'active' | 'rejected' | 'archived';
+
+export interface Community {
+  id: string;
+  name: string;
+  slug: string;
+  logoUrl: string;
+  bannerUrl?: string;
+  description: string;
+  instagramHandle?: string;
+  websiteUrl?: string;
+  region: string;
+  comuna: string;
+  approximateMembers: number;
+  isVerified: boolean; // Insignia de verificación de identidad externa
+  creatorId: string;
+  primaryAdminId: string;
+  status: CommunityStatus;
+  membersCount: number;
+  eventsCount: number;
+  createdAt: any;
+  updatedAt?: any;
+}
+
+export type CommunityRequestStatus = 'pending' | 'reviewing' | 'approved' | 'rejected' | 'more_info_needed';
+
+export interface CommunityRequest {
+  id: string;
+  communityName: string;
+  applicantId: string;
+  applicantEmail: string;
+  applicantName: string;
+  description: string;
+  instagramHandle: string;
+  verificationEvidenceUrls: string[];
+  region: string;
+  comuna: string;
+  approximateSize: number;
+  status: CommunityRequestStatus;
+  reviewedBy?: string;
+  feedbackNote?: string;
+  createdAt: any;
+}

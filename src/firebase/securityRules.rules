@@ -1,0 +1,100 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+    
+    function isSuperAdmin() {
+      return isAuthenticated() && 
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.isSuperAdmin == true;
+    }
+
+    // Reglas para usuarios: no pueden auto-asignarse isSuperAdmin ni cambiar su pawBalance directamente
+    match /users/{userId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() && request.auth.uid == userId
+        && !request.resource.data.keys().hasAny(['isSuperAdmin', 'pawBalance']);
+      allow update: if isOwner(userId)
+        && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['isSuperAdmin', 'pawBalance', 'status'])
+        || isSuperAdmin();
+    }
+
+    // Perros (Pasaporte Perruno)
+    match /dogs/{dogId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() && request.resource.data.ownerId == request.auth.uid;
+      allow update, delete: if isAuthenticated() && resource.data.ownerId == request.auth.uid || isSuperAdmin();
+    }
+
+    // Comunidades: lectura pública autenticada; creación sólo por SuperAdmin tras aprobar solicitud
+    match /communities/{communityId} {
+      allow read: if isAuthenticated();
+      allow create: if isSuperAdmin();
+      allow update: if isSuperAdmin() || 
+        (isAuthenticated() && resource.data.primaryAdminId == request.auth.uid 
+          && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['primaryAdminId', 'isVerified']));
+    }
+
+    // Miembros de comunidad
+    match /communities/{communityId}/members/{userId} {
+      allow read: if isAuthenticated();
+      allow write: if isSuperAdmin() || 
+        (isAuthenticated() && get(/databases/$(database)/documents/communities/$(communityId)).data.primaryAdminId == request.auth.uid);
+    }
+
+    // Solicitudes de verificación de comunidad
+    match /community_requests/{requestId} {
+      allow read: if isAuthenticated() && (resource.data.applicantId == request.auth.uid || isSuperAdmin());
+      allow create: if isAuthenticated() && request.resource.data.applicantId == request.auth.uid;
+      allow update, delete: if isSuperAdmin();
+    }
+
+    // Juntas (Eventos)
+    match /events/{eventId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated(); // Con validación de rol de admin en la comunidad
+      allow update: if isSuperAdmin() || 
+        (isAuthenticated() && resource.data.organizerUserIds.hasAny([request.auth.uid]));
+    }
+
+    // Asistentes a Juntas
+    match /events/{eventId}/attendees/{userId} {
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated() && request.auth.uid == userId;
+    }
+
+    // Comercios
+    match /businesses/{businessId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() && request.resource.data.ownerUserId == request.auth.uid;
+      allow update: if isSuperAdmin() || 
+        (isAuthenticated() && resource.data.ownerUserId == request.auth.uid 
+          && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['isVerified', 'plan']));
+    }
+
+    // Transacciones de Huellitas: Inmutables, solo modificables por Cloud Functions
+    match /paw_transactions/{txId} {
+      allow read: if isAuthenticated() && resource.data.userId == request.auth.uid || isSuperAdmin();
+      allow write: if false; 
+    }
+
+    // Canjes
+    match /redemptions/{redemptionId} {
+      allow read: if isAuthenticated() && (resource.data.userId == request.auth.uid || isSuperAdmin());
+      allow create: if false; // Solo por Cloud Function
+      allow update: if isAuthenticated(); // Solo validación de comercio
+    }
+    
+    // Logs de auditoría
+    match /audit_logs/{logId} {
+      allow read: if isSuperAdmin();
+      allow write: if false;
+    }
+  }
+}
