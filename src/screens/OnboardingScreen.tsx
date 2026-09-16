@@ -58,13 +58,11 @@ const SLIDES: OnboardingSlide[] = [
 interface OnboardingScreenProps {
   onStartRegister: () => void;
   onStartLogin: () => void;
-  onQuickAdminAccess?: () => void;
 }
 
 export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({
   onStartRegister,
-  onStartLogin,
-  onQuickAdminAccess
+  onStartLogin
 }) => {
   const insets = useSafeAreaInsets();
   const [currentSlideIndex, setCurrentSlideIndex] = useState(0);
@@ -84,13 +82,6 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({
             <Text style={styles.brandSubtitle}>Comunidades, Juntas & Pasaporte Canino</Text>
           </View>
         </View>
-
-        {onQuickAdminAccess && (
-          <TouchableOpacity style={styles.quickAdminBtn} onPress={onQuickAdminAccess}>
-            <Ionicons name="shield-checkmark" size={14} color="#EF4444" />
-            <Text style={styles.quickAdminText}>Acceso Admin</Text>
-          </TouchableOpacity>
-        )}
       </View>
 
       {/* Contenido del Slide Activo */}

@@ -4,7 +4,6 @@ import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { AppNavigator } from './src/navigation/AppNavigator';
 import { AuthProvider } from './src/context/AuthContext';
-import { RoleSwitcherBar } from './src/components/RoleSwitcherBar';
 
 interface ErrorBoundaryProps {
   children: ReactNode;
@@ -49,7 +48,6 @@ export default function App() {
         <AuthProvider>
           <View style={styles.container}>
             <StatusBar style="dark" />
-            <RoleSwitcherBar />
             <AppNavigator />
           </View>
         </AuthProvider>

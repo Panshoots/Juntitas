@@ -23,7 +23,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
   onBackToOnboarding
 }) => {
   const insets = useSafeAreaInsets();
-  const { registerUser, loginUser, loginAsSuperAdmin } = useAuth();
+  const { registerUser, loginUser } = useAuth();
 
   const [mode, setMode] = useState<'login' | 'register'>(initialMode);
   const [loading, setLoading] = useState(false);
@@ -136,11 +136,6 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
         <TouchableOpacity style={styles.backButton} onPress={onBackToOnboarding}>
           <Ionicons name="arrow-back" size={22} color="#0F172A" />
           <Text style={styles.backButtonText}>Inicio</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity style={styles.adminQuickBtn} onPress={loginAsSuperAdmin}>
-          <Ionicons name="shield-checkmark" size={14} color="#EF4444" />
-          <Text style={styles.adminQuickText}>Entrar Super Admin</Text>
         </TouchableOpacity>
       </View>
 

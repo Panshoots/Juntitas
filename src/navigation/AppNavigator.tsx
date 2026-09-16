@@ -14,14 +14,13 @@ import { useAuth } from '../context/AuthContext';
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
 export const AppNavigator: React.FC = () => {
-  const { sessionState, startAuthFlow, backToOnboarding, loginAsSuperAdmin } = useAuth();
+  const { sessionState, startAuthFlow, backToOnboarding } = useAuth();
 
   if (sessionState === 'onboarding') {
     return (
       <OnboardingScreen
         onStartRegister={() => startAuthFlow('register')}
         onStartLogin={() => startAuthFlow('login')}
-        onQuickAdminAccess={loginAsSuperAdmin}
       />
     );
   }

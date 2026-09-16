@@ -63,7 +63,6 @@ interface AuthContextType {
   // Operaciones de cuenta
   registerUser: (payload: RegisterPayload) => Promise<{ success: boolean; message: string }>;
   loginUser: (email: string, password?: string) => Promise<{ success: boolean; message: string }>;
-  loginAsSuperAdmin: () => void;
   logout: () => void;
 
   // Permisos helpers
@@ -90,7 +89,6 @@ const AuthContext = createContext<AuthContextType>({
   backToOnboarding: () => {},
   registerUser: async () => ({ success: false, message: '' }),
   loginUser: async () => ({ success: false, message: '' }),
-  loginAsSuperAdmin: () => {},
   logout: () => {},
   isSuperAdmin: false,
   isPrimaryAdminOf: () => false,
@@ -233,19 +231,32 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const loginUser = async (email: string, password?: string): Promise<{ success: boolean; message: string }> => {
-    // Si es super admin
-    if (email.toLowerCase().includes('admin')) {
-      loginAsSuperAdmin();
-      return { success: true, message: 'Sesión iniciada como Super Administrador.' };
+    const cleanEmail = (email || '').trim().toLowerCase();
+    const cleanPass = (password || '').trim();
+
+    // Acceso restringido exclusivo para Super Administrador con credenciales exactas: admin / admin
+    if (cleanEmail === 'admin' || cleanEmail === 'admin@juntitas.app') {
+      if (cleanPass === 'admin') {
+        setCurrentUser(SUPER_ADMIN_USER);
+        setCurrentDogs([]);
+        setSessionState('authenticated');
+        return { success: true, message: 'Acceso autorizado como Super Administrador.' };
+      } else {
+        return { 
+          success: false, 
+          message: 'Contraseña de administrador incorrecta. Acceso denegado.' 
+        };
+      }
     }
 
+    // Inicio de sesión para usuarios registrados en Firestore
     const allUsers = await getUsersFromDb();
-    const found = allUsers.find(u => u.email.toLowerCase() === email.toLowerCase());
+    const found = allUsers.find(u => u.email.toLowerCase() === cleanEmail);
 
     if (!found) {
       return { 
         success: false, 
-        message: 'Usuario no encontrado con ese correo. Por favor regístrate primero con tus datos reales.' 
+        message: 'No existe una cuenta con este correo. Por favor regístrate primero.' 
       };
     }
 
@@ -256,13 +267,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setSessionState('authenticated');
     }
 
-    return { success: true, message: 'Sesión iniciada correctamente.' };
-  };
-
-  const loginAsSuperAdmin = () => {
-    setCurrentUser(SUPER_ADMIN_USER);
-    setCurrentDogs([]);
-    setSessionState('authenticated');
+    return { success: true, message: 'Bienvenido de vuelta, ' + found.displayName + '.' };
   };
 
   const logout = () => {

@@ -6,7 +6,7 @@ import { useAuth } from '../context/AuthContext';
 
 export const AccountPendingScreen: React.FC = () => {
   const insets = useSafeAreaInsets();
-  const { currentUser, logout, loginAsSuperAdmin } = useAuth();
+  const { currentUser, logout } = useAuth();
 
   const isSuspended = currentUser.status === 'SUSPENDIDO' || currentUser.status === 'suspended' || currentUser.status === 'banned';
 
@@ -42,14 +42,9 @@ export const AccountPendingScreen: React.FC = () => {
           </Text>
         </View>
 
-        {/* Botón para Testing: Entrar como Super Admin para auto-aprobar */}
-        <TouchableOpacity style={styles.quickAdminBtn} onPress={loginAsSuperAdmin}>
-          <Ionicons name="key" size={16} color="#FFFFFF" />
-          <Text style={styles.quickAdminText}>⚡ Ir al CRM como Super Admin para Habilitar</Text>
-        </TouchableOpacity>
-
         <TouchableOpacity style={styles.logoutBtn} onPress={logout}>
-          <Text style={styles.logoutBtnText}>Cerrar Sesión / Volver</Text>
+          <Ionicons name="log-out" size={16} color="#64748B" style={{ marginRight: 6 }} />
+          <Text style={styles.logoutBtnText}>Cerrar Sesión / Salir</Text>
         </TouchableOpacity>
       </View>
     </View>

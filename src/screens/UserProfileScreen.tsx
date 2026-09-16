@@ -16,7 +16,7 @@ import { useAuth } from '../context/AuthContext';
 export const UserProfileScreen: React.FC = () => {
   const insets = useSafeAreaInsets();
   const navigation = useNavigation<any>();
-  const { activeProfile, currentUser, currentDogs, isSuperAdmin, isBusinessOwner } = useAuth();
+  const { activeProfile, currentUser, currentDogs, isSuperAdmin, isBusinessOwner, logout } = useAuth();
 
   const [showDogsPublic, setShowDogsPublic] = useState(true);
   const [showCommunitiesPublic, setShowCommunitiesPublic] = useState(true);
@@ -155,6 +155,14 @@ export const UserProfileScreen: React.FC = () => {
           <Text style={styles.settingLabel}>Mostrar mi asistencia en la lista de juntas</Text>
           <Switch value={showAttendancePublic} onValueChange={setShowAttendancePublic} trackColor={{ true: '#0284C7' }} />
         </View>
+      </View>
+
+      {/* Botón Cerrar Sesión */}
+      <View style={styles.section}>
+        <TouchableOpacity style={styles.logoutBtn} onPress={logout}>
+          <Ionicons name="log-out" size={18} color="#EF4444" />
+          <Text style={styles.logoutBtnText}>Cerrar Sesión de la Cuenta</Text>
+        </TouchableOpacity>
       </View>
 
       <View style={{ height: 100 }} />
@@ -322,5 +330,21 @@ const styles = StyleSheet.create({
     color: '#334155',
     flex: 1,
     marginRight: 10,
+  },
+  logoutBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#FEE2E2',
+    paddingVertical: 14,
+    borderRadius: 16,
+    gap: 8,
+    borderWidth: 1,
+    borderColor: '#FECACA',
+  },
+  logoutBtnText: {
+    color: '#DC2626',
+    fontWeight: '800',
+    fontSize: 14,
   },
 });

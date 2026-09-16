@@ -5,6 +5,16 @@ El formato sigue las directrices de [Keep a Changelog](https://keepachangelog.co
 
 ---
 
+## [0.1.1-beta] - 2026-09-16
+
+### 🔒 Seguridad & Autenticación Estricta
+- **Eliminación de atajos de admin no autorizados**: Se retiraron todos los botones públicos de "Acceso Admin" y "Entrar Super Admin" de las pantallas de Onboarding, Registro y Cuenta Pendiente.
+- **Autenticación formal de Administrador**: El acceso al Super Admin y su CRM ahora es estrictamente a través del formulario de Login ingresando las credenciales autorizadas (`admin` / `admin`).
+- **Eliminación de la barra flotante de roles**: Se eliminó la barra `RoleSwitcherBar` de `App.tsx`. Ahora la aplicación es 100% nativa y cada usuario opera única y exclusivamente con los permisos legítimos de su cuenta.
+- **Cierre de sesión nativo**: Añadido botón de "Cerrar Sesión" en el Perfil de Usuario.
+
+---
+
 ## [0.1.0-beta] - 2026-09-16
 
 ### ✨ Añadido
