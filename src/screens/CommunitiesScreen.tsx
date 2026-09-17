@@ -13,8 +13,18 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Community } from '../models/Community';
-import { getCommunities, joinCommunity, submitCommunityRequest, createOfficialCommunity } from '../services/communityService';
+import { Community, SecondaryAdminInfo, SecondaryAdminPermissions } from '../models/Community';
+import { 
+  getCommunities, 
+  joinCommunity, 
+  submitCommunityRequest, 
+  createOfficialCommunity,
+  getSecondaryAdminsForCommunity,
+  updateSecondaryAdminPermissions,
+  removeSecondaryAdmin,
+  addSecondaryAdmin,
+  DEFAULT_SECONDARY_PERMISSIONS
+} from '../services/communityService';
 import { 
   getCommunityPhotos, 
   uploadCommunityPhoto, 
@@ -48,6 +58,14 @@ export const CommunitiesScreen: React.FC = () => {
   const [showRequestModal, setShowRequestModal] = useState(false);
   const [showAdminModal, setShowAdminModal] = useState(false);
   const [selectedAdminComm, setSelectedAdminComm] = useState<Community | null>(null);
+
+  // Gestión de Administradores Secundarios (Coordinadores Delegados)
+  const [secAdminsList, setSecAdminsList] = useState<SecondaryAdminInfo[]>([]);
+  const [editingAdminId, setEditingAdminId] = useState<string | null>(null);
+  const [editingPermissions, setEditingPermissions] = useState<SecondaryAdminPermissions>(DEFAULT_SECONDARY_PERMISSIONS);
+  const [showAddSecAdminForm, setShowAddSecAdminForm] = useState(false);
+  const [newSecAdminName, setNewSecAdminName] = useState('');
+  const [newSecAdminEmail, setNewSecAdminEmail] = useState('');
 
   // Estados de Ubicación (Región y Comuna de Chile)
   const [regionsList, setRegionsList] = useState<ChileRegion[]>(MASTER_CHILE_REGIONS);
@@ -205,6 +223,92 @@ export const CommunitiesScreen: React.FC = () => {
       setReqInstagram('');
     } else {
       showToast(res.message, 'error');
+    }
+  };
+
+  const handleOpenAdminModal = (comm: Community) => {
+    setSelectedAdminComm(comm);
+    const list = getSecondaryAdminsForCommunity(comm);
+    setSecAdminsList(list);
+    setEditingAdminId(null);
+    setShowAddSecAdminForm(false);
+    setShowAdminModal(true);
+  };
+
+  const handleTogglePermission = (permKey: keyof SecondaryAdminPermissions) => {
+    setEditingPermissions(prev => ({
+      ...prev,
+      [permKey]: !prev[permKey]
+    }));
+  };
+
+  const handleStartEditingPermissions = (admin: SecondaryAdminInfo) => {
+    if (editingAdminId === admin.userId) {
+      setEditingAdminId(null);
+    } else {
+      setEditingAdminId(admin.userId);
+      setEditingPermissions({ ...admin.permissions });
+    }
+  };
+
+  const handleSavePermissions = async (adminUserId: string) => {
+    if (!selectedAdminComm) return;
+    const res = await updateSecondaryAdminPermissions(
+      selectedAdminComm.id,
+      adminUserId,
+      editingPermissions,
+      currentUser.id
+    );
+    showToast(res.message, res.success ? 'success' : 'error');
+    if (res.success && res.updatedAdmins) {
+      setSecAdminsList(res.updatedAdmins);
+      setEditingAdminId(null);
+      loadCommunities();
+    }
+  };
+
+  const handleRemoveSecondaryAdmin = async (admin: SecondaryAdminInfo) => {
+    if (!selectedAdminComm) return;
+    const confirmRevoke = confirm(`¿Estás seguro de que deseas revocar las atribuciones de Administrador Secundario a ${admin.name}?`);
+    if (!confirmRevoke) return;
+
+    const res = await removeSecondaryAdmin(
+      selectedAdminComm.id,
+      admin.userId,
+      currentUser.id
+    );
+    showToast(res.message, res.success ? 'success' : 'info');
+    if (res.success && res.updatedAdmins) {
+      setSecAdminsList(res.updatedAdmins);
+      if (editingAdminId === admin.userId) setEditingAdminId(null);
+      loadCommunities();
+    }
+  };
+
+  const handleAddSecondaryAdmin = async () => {
+    if (!selectedAdminComm) return;
+    if (!newSecAdminName.trim() || !newSecAdminEmail.trim()) {
+      showToast('Por favor completa el nombre y correo del nuevo coordinador.', 'warning');
+      return;
+    }
+
+    const res = await addSecondaryAdmin(
+      selectedAdminComm.id,
+      {
+        name: newSecAdminName.trim(),
+        email: newSecAdminEmail.trim(),
+        permissions: DEFAULT_SECONDARY_PERMISSIONS
+      },
+      currentUser.id
+    );
+
+    showToast(res.message, res.success ? 'success' : 'error');
+    if (res.success && res.updatedAdmins) {
+      setSecAdminsList(res.updatedAdmins);
+      setNewSecAdminName('');
+      setNewSecAdminEmail('');
+      setShowAddSecAdminForm(false);
+      loadCommunities();
     }
   };
 
@@ -429,10 +533,7 @@ export const CommunitiesScreen: React.FC = () => {
                     {isPrimary && (
                       <TouchableOpacity 
                         style={styles.manageSecAdminsButton}
-                        onPress={() => {
-                          setSelectedAdminComm(item);
-                          setShowAdminModal(true);
-                        }}
+                        onPress={() => handleOpenAdminModal(item)}
                       >
                         <Ionicons name="people-circle" size={16} color="#B45309" />
                         <Text style={styles.manageSecAdminsText}>Gestionar Administradores Secundarios</Text>
@@ -1103,34 +1204,219 @@ export const CommunitiesScreen: React.FC = () => {
       {/* Modal de Gestión de Administradores Secundarios */}
       <Modal visible={showAdminModal} transparent animationType="slide">
         <View style={styles.modalOverlay}>
-          <View style={styles.modalCard}>
+          <View style={[styles.modalCard, { maxHeight: '90%' }]}>
             <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>👑 Gestión de Administradores</Text>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.modalTitle}>👑 Gestión de Administradores</Text>
+                <Text style={[styles.modalIntro, { marginBottom: 0 }]}>
+                  {selectedAdminComm?.name}
+                </Text>
+              </View>
               <TouchableOpacity onPress={() => setShowAdminModal(false)}>
                 <Ionicons name="close" size={24} color="#64748B" />
               </TouchableOpacity>
             </View>
 
             <Text style={styles.modalIntro}>
-              {selectedAdminComm?.name}: Como Administrador Principal, tú tienes la titularidad exclusiva y delegas funciones a tus coordinadores.
+              Como Administrador Principal, tú tienes la titularidad exclusiva y delegas permisos a tus coordinadores para ayudarte a gestionar la comunidad.
             </Text>
 
-            <View style={styles.secAdminList}>
-              <View style={styles.secAdminItem}>
-                <Image 
-                  source={{ uri: 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=200' }} 
-                  style={styles.secAdminAvatar} 
-                />
-                <View style={{ flex: 1, marginLeft: 10 }}>
-                  <Text style={styles.secAdminName}>Andrea Soto</Text>
-                  <Text style={styles.secAdminEmail}>andrea.soto@goldenretrieverschile.cl</Text>
-                  <Text style={styles.secAdminRole}>Administrador Secundario (Delegada)</Text>
-                </View>
+            <ScrollView style={{ maxHeight: 420 }} showsVerticalScrollIndicator={false}>
+              <View style={styles.secAdminList}>
+                {secAdminsList.length === 0 ? (
+                  <View style={styles.emptyCard}>
+                    <Ionicons name="people-outline" size={32} color="#94A3B8" />
+                    <Text style={styles.emptyText}>No hay administradores secundarios asignados aún.</Text>
+                  </View>
+                ) : (
+                  secAdminsList.map(admin => {
+                    const isEditing = editingAdminId === admin.userId;
+                    return (
+                      <View key={admin.userId} style={styles.secAdminCardContainer}>
+                        <View style={styles.secAdminItem}>
+                          <Image 
+                            source={{ uri: admin.avatarUrl || 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=200' }} 
+                            style={styles.secAdminAvatar} 
+                          />
+                          <View style={{ flex: 1, marginLeft: 10 }}>
+                            <Text style={styles.secAdminName}>{admin.name}</Text>
+                            <Text style={styles.secAdminEmail}>{admin.email}</Text>
+                            <Text style={styles.secAdminRole}>Administrador Secundario (Delegado)</Text>
+                          </View>
+                        </View>
+
+                        {/* Chips de Permisos Actuales */}
+                        <View style={styles.permChipsRow}>
+                          <View style={[styles.permChip, admin.permissions.canCreateEvents && styles.permChipActive]}>
+                            <Ionicons name="calendar" size={11} color={admin.permissions.canCreateEvents ? '#0284C7' : '#94A3B8'} />
+                            <Text style={[styles.permChipText, admin.permissions.canCreateEvents && styles.permChipTextActive]}>Crear Juntas</Text>
+                          </View>
+                          <View style={[styles.permChip, admin.permissions.canModeratePosts && styles.permChipActive]}>
+                            <Ionicons name="shield" size={11} color={admin.permissions.canModeratePosts ? '#0284C7' : '#94A3B8'} />
+                            <Text style={[styles.permChipText, admin.permissions.canModeratePosts && styles.permChipTextActive]}>Moderar Fotos</Text>
+                          </View>
+                          <View style={[styles.permChip, admin.permissions.canManageMembers && styles.permChipActive]}>
+                            <Ionicons name="people" size={11} color={admin.permissions.canManageMembers ? '#0284C7' : '#94A3B8'} />
+                            <Text style={[styles.permChipText, admin.permissions.canManageMembers && styles.permChipTextActive]}>Miembros</Text>
+                          </View>
+                          <View style={[styles.permChip, admin.permissions.canManageVendors && styles.permChipActive]}>
+                            <Ionicons name="storefront" size={11} color={admin.permissions.canManageVendors ? '#0284C7' : '#94A3B8'} />
+                            <Text style={[styles.permChipText, admin.permissions.canManageVendors && styles.permChipTextActive]}>Comercios</Text>
+                          </View>
+                        </View>
+
+                        {/* Acciones de Gestión */}
+                        <View style={styles.adminActionButtonsRow}>
+                          <TouchableOpacity 
+                            style={[styles.secAdminActionBtn, isEditing && styles.secAdminActionBtnActive]}
+                            onPress={() => handleStartEditingPermissions(admin)}
+                          >
+                            <Ionicons name="options" size={13} color={isEditing ? '#0284C7' : '#475569'} />
+                            <Text style={[styles.secAdminActionBtnText, isEditing && styles.secAdminActionBtnTextActive]}>
+                              {isEditing ? 'Cerrar Permisos' : 'Configurar Permisos'}
+                            </Text>
+                          </TouchableOpacity>
+
+                          <TouchableOpacity 
+                            style={styles.secAdminRevokeBtn}
+                            onPress={() => handleRemoveSecondaryAdmin(admin)}
+                          >
+                            <Ionicons name="person-remove" size={13} color="#DC2626" />
+                            <Text style={styles.secAdminRevokeBtnText}>Revocar Rol</Text>
+                          </TouchableOpacity>
+                        </View>
+
+                        {/* Editor de Permisos Expandible */}
+                        {isEditing && (
+                          <View style={styles.permissionsEditorBox}>
+                            <Text style={styles.permissionsEditorTitle}>Delegar Funciones Específicas:</Text>
+                            
+                            <TouchableOpacity 
+                              style={styles.permCheckRow}
+                              onPress={() => handleTogglePermission('canCreateEvents')}
+                            >
+                              <Ionicons name={editingPermissions.canCreateEvents ? "checkbox" : "square-outline"} size={20} color={editingPermissions.canCreateEvents ? "#0284C7" : "#94A3B8"} />
+                              <View style={{ flex: 1, marginLeft: 8 }}>
+                                <Text style={styles.permCheckLabel}>📅 Convocar Juntas Oficiales</Text>
+                                <Text style={styles.permCheckDesc}>Permite publicar juntas a nombre de la comunidad</Text>
+                              </View>
+                            </TouchableOpacity>
+
+                            <TouchableOpacity 
+                              style={styles.permCheckRow}
+                              onPress={() => handleTogglePermission('canEditEvents')}
+                            >
+                              <Ionicons name={editingPermissions.canEditEvents ? "checkbox" : "square-outline"} size={20} color={editingPermissions.canEditEvents ? "#0284C7" : "#94A3B8"} />
+                              <View style={{ flex: 1, marginLeft: 8 }}>
+                                <Text style={styles.permCheckLabel}>✏️ Editar y Reprogramar Juntas</Text>
+                                <Text style={styles.permCheckDesc}>Permite actualizar fechas, lugares y capacidad</Text>
+                              </View>
+                            </TouchableOpacity>
+
+                            <TouchableOpacity 
+                              style={styles.permCheckRow}
+                              onPress={() => handleTogglePermission('canModeratePosts')}
+                            >
+                              <Ionicons name={editingPermissions.canModeratePosts ? "checkbox" : "square-outline"} size={20} color={editingPermissions.canModeratePosts ? "#0284C7" : "#94A3B8"} />
+                              <View style={{ flex: 1, marginLeft: 8 }}>
+                                <Text style={styles.permCheckLabel}>🛡️ Moderar Álbum de Fotos</Text>
+                                <Text style={styles.permCheckDesc}>Eliminar contenido inapropiado de la galería</Text>
+                              </View>
+                            </TouchableOpacity>
+
+                            <TouchableOpacity 
+                              style={styles.permCheckRow}
+                              onPress={() => handleTogglePermission('canManageMembers')}
+                            >
+                              <Ionicons name={editingPermissions.canManageMembers ? "checkbox" : "square-outline"} size={20} color={editingPermissions.canManageMembers ? "#0284C7" : "#94A3B8"} />
+                              <View style={{ flex: 1, marginLeft: 8 }}>
+                                <Text style={styles.permCheckLabel}>👥 Gestionar Miembros y Solicitudes</Text>
+                                <Text style={styles.permCheckDesc}>Aprobar nuevos integrantes del grupo</Text>
+                              </View>
+                            </TouchableOpacity>
+
+                            <TouchableOpacity 
+                              style={styles.permCheckRow}
+                              onPress={() => handleTogglePermission('canManageAlbums')}
+                            >
+                              <Ionicons name={editingPermissions.canManageAlbums ? "checkbox" : "square-outline"} size={20} color={editingPermissions.canManageAlbums ? "#0284C7" : "#94A3B8"} />
+                              <View style={{ flex: 1, marginLeft: 8 }}>
+                                <Text style={styles.permCheckLabel}>📸 Organizar Álbumes Comunitarios</Text>
+                                <Text style={styles.permCheckDesc}>Crear colecciones de fotos de eventos pasados</Text>
+                              </View>
+                            </TouchableOpacity>
+
+                            <TouchableOpacity 
+                              style={styles.permCheckRow}
+                              onPress={() => handleTogglePermission('canManageVendors')}
+                            >
+                              <Ionicons name={editingPermissions.canManageVendors ? "checkbox" : "square-outline"} size={20} color={editingPermissions.canManageVendors ? "#0284C7" : "#94A3B8"} />
+                              <View style={{ flex: 1, marginLeft: 8 }}>
+                                <Text style={styles.permCheckLabel}>🏪 Aprobar Stands y Comercios</Text>
+                                <Text style={styles.permCheckDesc}>Permite autorizar tiendas para participar en juntas</Text>
+                              </View>
+                            </TouchableOpacity>
+
+                            <TouchableOpacity 
+                              style={styles.savePermsBtn}
+                              onPress={() => handleSavePermissions(admin.userId)}
+                            >
+                              <Text style={styles.savePermsBtnText}>Guardar Permisos Delegados</Text>
+                            </TouchableOpacity>
+                          </View>
+                        )}
+                      </View>
+                    );
+                  })
+                )}
               </View>
-            </View>
+
+              {/* Botón y Formulario para Agregar Nuevo Administrador Secundario */}
+              {showAddSecAdminForm ? (
+                <View style={styles.addSecAdminBox}>
+                  <Text style={styles.addSecAdminTitle}>Designar Nuevo Administrador Secundario</Text>
+                  <TextInput
+                    placeholder="Nombre completo del coordinador..."
+                    value={newSecAdminName}
+                    onChangeText={setNewSecAdminName}
+                    style={styles.modalInput}
+                  />
+                  <TextInput
+                    placeholder="Correo electrónico registrado..."
+                    value={newSecAdminEmail}
+                    onChangeText={setNewSecAdminEmail}
+                    style={styles.modalInput}
+                    keyboardType="email-address"
+                    autoCapitalize="none"
+                  />
+                  <View style={{ flexDirection: 'row', gap: 8, marginTop: 4 }}>
+                    <TouchableOpacity 
+                      style={[styles.secAdminActionBtn, { flex: 1 }]}
+                      onPress={() => setShowAddSecAdminForm(false)}
+                    >
+                      <Text style={styles.secAdminActionBtnText}>Cancelar</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity 
+                      style={[styles.submitReqButton, { flex: 1, marginTop: 0 }]}
+                      onPress={handleAddSecondaryAdmin}
+                    >
+                      <Text style={styles.submitReqButtonText}>Designar</Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              ) : (
+                <TouchableOpacity 
+                  style={styles.addSecAdminTrigger}
+                  onPress={() => setShowAddSecAdminForm(true)}
+                >
+                  <Ionicons name="person-add" size={15} color="#0284C7" />
+                  <Text style={styles.addSecAdminTriggerText}>+ Designar Nuevo Administrador Secundario</Text>
+                </TouchableOpacity>
+              )}
+            </ScrollView>
 
             <TouchableOpacity 
-              style={styles.closeAdminModalBtn}
+              style={[styles.closeAdminModalBtn, { marginTop: 12 }]}
               onPress={() => setShowAdminModal(false)}
             >
               <Text style={styles.closeAdminModalText}>Cerrar Panel de Gestión</Text>
@@ -1899,5 +2185,161 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '700',
     color: '#FFFFFF',
+  },
+  secAdminCardContainer: {
+    backgroundColor: '#F8FAFC',
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    padding: 12,
+    marginBottom: 12,
+  },
+  permChipsRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+    marginTop: 8,
+  },
+  permChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#F1F5F9',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+  },
+  permChipActive: {
+    backgroundColor: '#E0F2FE',
+  },
+  permChipText: {
+    fontSize: 10,
+    color: '#64748B',
+    fontWeight: '600',
+  },
+  permChipTextActive: {
+    color: '#0284C7',
+    fontWeight: '700',
+  },
+  adminActionButtonsRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginTop: 10,
+  },
+  secAdminActionBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 4,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#CBD5E1',
+    paddingVertical: 6,
+    borderRadius: 8,
+  },
+  secAdminActionBtnActive: {
+    borderColor: '#0284C7',
+    backgroundColor: '#F0F9FF',
+  },
+  secAdminActionBtnText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#475569',
+  },
+  secAdminActionBtnTextActive: {
+    color: '#0284C7',
+  },
+  secAdminRevokeBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 4,
+    backgroundColor: '#FEF2F2',
+    borderWidth: 1,
+    borderColor: '#FECACA',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
+  },
+  secAdminRevokeBtnText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#DC2626',
+  },
+  permissionsEditorBox: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#BAE6FD',
+    padding: 10,
+    marginTop: 10,
+  },
+  permissionsEditorTitle: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: '#0369A1',
+    marginBottom: 8,
+  },
+  permCheckRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    paddingVertical: 6,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F1F5F9',
+  },
+  permCheckLabel: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#1E293B',
+  },
+  permCheckDesc: {
+    fontSize: 10,
+    color: '#64748B',
+    marginTop: 1,
+  },
+  savePermsBtn: {
+    backgroundColor: '#0284C7',
+    paddingVertical: 8,
+    borderRadius: 8,
+    alignItems: 'center',
+    marginTop: 8,
+  },
+  savePermsBtnText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#FFFFFF',
+  },
+  addSecAdminBox: {
+    backgroundColor: '#F0FDF4',
+    borderWidth: 1,
+    borderColor: '#BBF7D0',
+    borderRadius: 12,
+    padding: 12,
+    marginTop: 8,
+  },
+  addSecAdminTitle: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#15803D',
+    marginBottom: 8,
+  },
+  addSecAdminTrigger: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    backgroundColor: '#F0F9FF',
+    borderWidth: 1.5,
+    borderStyle: 'dashed',
+    borderColor: '#BAE6FD',
+    paddingVertical: 10,
+    borderRadius: 12,
+    marginTop: 4,
+  },
+  addSecAdminTriggerText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#0284C7',
   },
 });

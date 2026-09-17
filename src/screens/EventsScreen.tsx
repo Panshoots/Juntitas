@@ -4,10 +4,11 @@ import {
   Text, 
   StyleSheet, 
   FlatList, 
+  ScrollView,
   Image, 
   TouchableOpacity, 
   Modal,
-  TextInput,
+  TextInput, 
   RefreshControl 
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
@@ -36,6 +37,17 @@ export const EventsScreen: React.FC = () => {
   const [modalMode, setModalMode] = useState<'register' | 'edit'>('register');
   const [showRegisterModal, setShowRegisterModal] = useState(false);
   const [showCreateEventModal, setShowCreateEventModal] = useState(false);
+
+  // Modal de Visualización de Asistentes y Comercios
+  const [showAttendeesModal, setShowAttendeesModal] = useState(false);
+  const [attendeesModalTab, setAttendeesModalTab] = useState<'attendees' | 'businesses'>('attendees');
+  const [selectedEventForAttendees, setSelectedEventForAttendees] = useState<DogEvent | null>(null);
+
+  const handleOpenAttendeesModal = (event: DogEvent, initialTab: 'attendees' | 'businesses' = 'attendees') => {
+    setSelectedEventForAttendees(event);
+    setAttendeesModalTab(initialTab);
+    setShowAttendeesModal(true);
+  };
 
   // Perros seleccionados del perfil activo
   const [selectedDogIds, setSelectedDogIds] = useState<Record<string, boolean>>({});
@@ -285,23 +297,40 @@ export const EventsScreen: React.FC = () => {
                   </TouchableOpacity>
                 </View>
 
-                {/* Conteo transparente diferenciado: Tutores vs Perritos (Sección 12 Plan Maestro) */}
+                {/* Conteo interactivo: Toca para ver quiénes van (Tutores, Perritos y Comercios) */}
                 <View style={styles.countsRow}>
-                  <View style={styles.countBadge}>
-                    <Ionicons name="person" size={14} color="#475569" />
+                  <TouchableOpacity 
+                    style={styles.countBadge}
+                    onPress={() => handleOpenAttendeesModal(item, 'attendees')}
+                    activeOpacity={0.7}
+                  >
+                    <Ionicons name="person" size={13} color="#475569" />
                     <Text style={styles.countText}>{item.tutorsCount} Tutores</Text>
-                  </View>
-                  <View style={[styles.countBadge, { backgroundColor: '#FEF3C7' }]}>
-                    <Ionicons name="paw" size={14} color="#D97706" />
+                    <Ionicons name="eye-outline" size={11} color="#94A3B8" />
+                  </TouchableOpacity>
+
+                  <TouchableOpacity 
+                    style={[styles.countBadge, { backgroundColor: '#FEF3C7' }]}
+                    onPress={() => handleOpenAttendeesModal(item, 'attendees')}
+                    activeOpacity={0.7}
+                  >
+                    <Ionicons name="paw" size={13} color="#D97706" />
                     <Text style={[styles.countText, { color: '#B45309' }]}>
                       {item.dogsCount} Perritos
                     </Text>
-                  </View>
+                    <Ionicons name="eye-outline" size={11} color="#D97706" />
+                  </TouchableOpacity>
+
                   {item.acceptsBusinesses && (
-                    <View style={[styles.countBadge, { backgroundColor: '#F3E8FF' }]}>
-                      <Ionicons name="storefront" size={14} color="#7E22CE" />
+                    <TouchableOpacity 
+                      style={[styles.countBadge, { backgroundColor: '#F3E8FF' }]}
+                      onPress={() => handleOpenAttendeesModal(item, 'businesses')}
+                      activeOpacity={0.7}
+                    >
+                      <Ionicons name="storefront" size={13} color="#7E22CE" />
                       <Text style={[styles.countText, { color: '#7E22CE' }]}>Comercios</Text>
-                    </View>
+                      <Ionicons name="eye-outline" size={11} color="#7E22CE" />
+                    </TouchableOpacity>
                   )}
                 </View>
 
@@ -494,6 +523,252 @@ export const EventsScreen: React.FC = () => {
 
             <TouchableOpacity style={styles.confirmButton} onPress={handleCreateNewEvent}>
               <Text style={styles.confirmButtonText}>Publicar Junta Oficial</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Modal de Asistentes y Comercios (Visualizar quiénes van a la junta) */}
+      <Modal visible={showAttendeesModal} transparent animationType="slide">
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalCard, { maxHeight: '88%' }]}>
+            <View style={styles.modalHeader}>
+              <View style={{ flex: 1, paddingRight: 8 }}>
+                <Text style={styles.modalTitle}>🐾 Participantes de la Junta</Text>
+                <Text style={[styles.modalSubtitle, { marginBottom: 0 }]} numberOfLines={1}>
+                  {selectedEventForAttendees?.title}
+                </Text>
+              </View>
+              <TouchableOpacity onPress={() => setShowAttendeesModal(false)}>
+                <Ionicons name="close" size={24} color="#64748B" />
+              </TouchableOpacity>
+            </View>
+
+            {/* Subtabs de Navegación del Modal */}
+            <View style={styles.attendeesTabRow}>
+              <TouchableOpacity 
+                style={[styles.attendeesTabBtn, attendeesModalTab === 'attendees' && styles.attendeesTabBtnActive]}
+                onPress={() => setAttendeesModalTab('attendees')}
+              >
+                <Ionicons name="people" size={15} color={attendeesModalTab === 'attendees' ? '#0284C7' : '#64748B'} />
+                <Text style={[styles.attendeesTabBtnText, attendeesModalTab === 'attendees' && styles.attendeesTabBtnTextActive]}>
+                  Tutores & Perritos ({selectedEventForAttendees?.tutorsCount || 0})
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity 
+                style={[styles.attendeesTabBtn, attendeesModalTab === 'businesses' && styles.attendeesTabBtnActive]}
+                onPress={() => setAttendeesModalTab('businesses')}
+              >
+                <Ionicons name="storefront" size={15} color={attendeesModalTab === 'businesses' ? '#0284C7' : '#64748B'} />
+                <Text style={[styles.attendeesTabBtnText, attendeesModalTab === 'businesses' && styles.attendeesTabBtnTextActive]}>
+                  Comercios & Stands
+                </Text>
+              </TouchableOpacity>
+            </View>
+
+            {/* Contenido Pestaña 1: Tutores y Perritos */}
+            {attendeesModalTab === 'attendees' && (
+              <ScrollView style={{ maxHeight: 420 }} showsVerticalScrollIndicator={false}>
+                {/* Si el usuario actual está inscrito */}
+                {(() => {
+                  if (!selectedEventForAttendees) return null;
+                  const myAtt = attendancesMap[selectedEventForAttendees.id];
+                  const isEnrolled = !!myAtt || selectedEventForAttendees.attendeeUserIds?.includes(currentUser?.id);
+
+                  if (!isEnrolled) return null;
+
+                  return (
+                    <View style={styles.myAttendanceBannerCard}>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                        <Image 
+                          source={{ uri: currentUser.photoURL || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=100' }} 
+                          style={styles.attendeeAvatar} 
+                        />
+                        <View style={{ flex: 1 }}>
+                          <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                            <Text style={styles.attendeeName}>{currentUser.displayName} (Tú)</Text>
+                            <View style={styles.myStatusBadge}>
+                              <Text style={styles.myStatusBadgeText}>Confirmado</Text>
+                            </View>
+                          </View>
+                          <Text style={styles.attendeeSubtitle}>
+                            🐾 Asistes con {myAtt ? myAtt.map(d => d.name).join(' y ') : 'tu perrito'}
+                          </Text>
+                        </View>
+                      </View>
+                    </View>
+                  );
+                })()}
+
+                <Text style={styles.attendeesSectionHeader}>
+                  Tutores y perritos confirmados para esta junta:
+                </Text>
+
+                {/* Lista de Tutores y sus Perritos */}
+                {[
+                  {
+                    id: 'att-1',
+                    name: 'Camila Valenzuela',
+                    avatar: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=150',
+                    dogs: [
+                      { name: 'Milo', breed: 'Golden Retriever', photo: 'https://images.unsplash.com/photo-1552053831-71594a27632d?w=200', role: 'Socializador' }
+                    ]
+                  },
+                  {
+                    id: 'att-2',
+                    name: 'Diego Silva',
+                    avatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150',
+                    dogs: [
+                      { name: 'Bruno', breed: 'Beagle', photo: 'https://images.unsplash.com/photo-1537151608828-ea2b11777ee8?w=200', role: 'Explorador' }
+                    ]
+                  },
+                  {
+                    id: 'att-3',
+                    name: 'Macarena Fuenzalida',
+                    avatar: 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=150',
+                    dogs: [
+                      { name: 'Simba', breed: 'Pug', photo: 'https://images.unsplash.com/photo-1517849845537-4d257902454a?w=200', role: 'Dormilón Alegre' },
+                      { name: 'Kira', breed: 'Shih Tzu', photo: 'https://images.unsplash.com/photo-1583511655857-d19b40a7a54e?w=200', role: 'Cariñosa' }
+                    ]
+                  },
+                  {
+                    id: 'att-4',
+                    name: 'Jorge Alarcón',
+                    avatar: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=150',
+                    dogs: [
+                      { name: 'Thor', breed: 'Pastor Alemán', photo: 'https://images.unsplash.com/photo-1589941013453-ec89f33b5455?w=200', role: 'Guardián Amigable' }
+                    ]
+                  },
+                  {
+                    id: 'att-5',
+                    name: 'Ignacia Morales',
+                    avatar: 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?w=150',
+                    dogs: [
+                      { name: 'Bella', breed: 'Border Collie', photo: 'https://images.unsplash.com/photo-1518717758536-85ae29035b6d?w=200', role: 'Ágil y Juguetona' }
+                    ]
+                  },
+                  {
+                    id: 'att-6',
+                    name: 'Felipe Navarro',
+                    avatar: 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=150',
+                    dogs: [
+                      { name: 'Toby', breed: 'Jack Russell Terrier', photo: 'https://images.unsplash.com/photo-1543466835-00a7907e9de1?w=200', role: 'Corredor Experto' }
+                    ]
+                  }
+                ].map(att => (
+                  <View key={att.id} style={styles.attendeeCard}>
+                    <View style={styles.attendeeHeaderRow}>
+                      <Image source={{ uri: att.avatar }} style={styles.attendeeAvatar} />
+                      <View style={{ flex: 1, marginLeft: 10 }}>
+                        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                          <Text style={styles.attendeeName}>{att.name}</Text>
+                          <Ionicons name="checkmark-circle" size={14} color="#0284C7" style={{ marginLeft: 4 }} />
+                        </View>
+                        <Text style={styles.attendeeSubtitle}>Tutor Oficial Confirmado</Text>
+                      </View>
+                    </View>
+
+                    {/* Perritos del Tutor */}
+                    <View style={styles.attendeeDogsRow}>
+                      {att.dogs.map((dog, dIdx) => (
+                        <View key={dIdx} style={styles.attendeeDogChip}>
+                          <Image source={{ uri: dog.photo }} style={styles.attendeeDogThumb} />
+                          <View>
+                            <Text style={styles.attendeeDogName}>🐾 {dog.name}</Text>
+                            <Text style={styles.attendeeDogBreed}>{dog.breed} • {dog.role}</Text>
+                          </View>
+                        </View>
+                      ))}
+                    </View>
+                  </View>
+                ))}
+              </ScrollView>
+            )}
+
+            {/* Contenido Pestaña 2: Comercios y Stands */}
+            {attendeesModalTab === 'businesses' && (
+              <ScrollView style={{ maxHeight: 420 }} showsVerticalScrollIndicator={false}>
+                <Text style={styles.attendeesSectionHeader}>
+                  Stands y marcas oficiales que estarán en la junta:
+                </Text>
+
+                {[
+                  {
+                    id: 'biz-1',
+                    name: 'Bark Bakery Chile',
+                    category: '🧁 Pastelería & Snacks Naturales',
+                    desc: 'Galletas de avena, quequitos caninos sin azúcar y helados de caldo de hueso para hidratación.',
+                    standNumber: 'Stand #1',
+                    benefit: '10% dcto para miembros con pasaporte',
+                    logo: 'https://images.unsplash.com/photo-1548767797-d8c844163c4c?w=200'
+                  },
+                  {
+                    id: 'biz-2',
+                    name: 'K9 Adventure Gear',
+                    category: '🦮 Accesorios & Paseo',
+                    desc: 'Arneses ergonómicos antitirones, correas reflectantes de biothane y bebederos plegables de silicona.',
+                    standNumber: 'Stand #2',
+                    benefit: 'Regalo sorpresa por compras superiores a $15.000',
+                    logo: 'https://images.unsplash.com/photo-1583337130417-3346a1be7dee?w=200'
+                  },
+                  {
+                    id: 'biz-3',
+                    name: 'Clínica Veterinaria San Roque',
+                    category: '🩺 Salud & Bienestar Preventivo',
+                    desc: 'Punto de hidratación asistida, control de peso gratuito y evaluación dental exprés en la junta.',
+                    standNumber: 'Stand #3',
+                    benefit: 'Revisión preventiva gratis en el evento',
+                    logo: 'https://images.unsplash.com/photo-1576201836106-db1758fd1c97?w=200'
+                  },
+                  {
+                    id: 'biz-4',
+                    name: 'Patitas SPA Móvil',
+                    category: '✂️ Grooming & Estética Exprés',
+                    desc: 'Limpieza de almohadillas, cepillado deslanado y perfume hipoalergénico.',
+                    standNumber: 'Stand #4',
+                    benefit: 'Corte de uñas gratis presentando la app',
+                    logo: 'https://images.unsplash.com/photo-1516734212186-a967f81ad0d7?w=200'
+                  }
+                ].map(biz => (
+                  <View key={biz.id} style={styles.businessStandCard}>
+                    <View style={styles.businessStandHeader}>
+                      <Image source={{ uri: biz.logo }} style={styles.businessStandLogo} />
+                      <View style={{ flex: 1, marginLeft: 10 }}>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+                          <Text style={styles.businessStandName}>{biz.name}</Text>
+                          <View style={styles.standBadge}>
+                            <Text style={styles.standBadgeText}>{biz.standNumber}</Text>
+                          </View>
+                        </View>
+                        <Text style={styles.businessStandCategory}>{biz.category}</Text>
+                      </View>
+                    </View>
+                    <Text style={styles.businessStandDesc}>{biz.desc}</Text>
+                    <View style={styles.businessBenefitBadge}>
+                      <Ionicons name="gift" size={13} color="#7E22CE" />
+                      <Text style={styles.businessBenefitText}>Beneficio: {biz.benefit}</Text>
+                    </View>
+                  </View>
+                ))}
+
+                <View style={styles.businessCalloutBox}>
+                  <Ionicons name="storefront-outline" size={20} color="#0284C7" />
+                  <View style={{ flex: 1, marginLeft: 8 }}>
+                    <Text style={styles.businessCalloutTitle}>¿Tienes un emprendimiento para mascotas?</Text>
+                    <Text style={styles.businessCalloutSub}>
+                      Accede al Portal de Comercios en tu menú para solicitar autorización de stand en futuras juntas.
+                    </Text>
+                  </View>
+                </View>
+              </ScrollView>
+            )}
+
+            <TouchableOpacity 
+              style={[styles.confirmButton, { marginTop: 14 }]} 
+              onPress={() => setShowAttendeesModal(false)}
+            >
+              <Text style={styles.confirmButtonText}>Cerrar</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -858,5 +1133,204 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '700',
     color: '#DC2626',
+  },
+  attendeesTabRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginVertical: 12,
+  },
+  attendeesTabBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 8,
+    borderRadius: 10,
+    backgroundColor: '#F1F5F9',
+  },
+  attendeesTabBtnActive: {
+    backgroundColor: '#E0F2FE',
+  },
+  attendeesTabBtnText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#64748B',
+  },
+  attendeesTabBtnTextActive: {
+    color: '#0284C7',
+    fontWeight: '800',
+  },
+  myAttendanceBannerCard: {
+    backgroundColor: '#F0FDF4',
+    borderWidth: 1.5,
+    borderColor: '#86EFAC',
+    borderRadius: 14,
+    padding: 12,
+    marginBottom: 12,
+  },
+  attendeeAvatar: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: '#E2E8F0',
+  },
+  attendeeName: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: '#0F172A',
+  },
+  myStatusBadge: {
+    backgroundColor: '#DCFCE7',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
+    marginLeft: 6,
+  },
+  myStatusBadgeText: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#15803D',
+  },
+  attendeeSubtitle: {
+    fontSize: 12,
+    color: '#166534',
+    marginTop: 2,
+    fontWeight: '600',
+  },
+  attendeesSectionHeader: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#64748B',
+    marginBottom: 10,
+  },
+  attendeeCard: {
+    backgroundColor: '#F8FAFC',
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    padding: 12,
+    marginBottom: 10,
+  },
+  attendeeHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  attendeeDogsRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginTop: 10,
+    paddingTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: '#E2E8F0',
+  },
+  attendeeDogChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#CBD5E1',
+    borderRadius: 10,
+    padding: 6,
+    paddingRight: 10,
+  },
+  attendeeDogThumb: {
+    width: 32,
+    height: 32,
+    borderRadius: 8,
+    backgroundColor: '#E2E8F0',
+  },
+  attendeeDogName: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: '#0F172A',
+  },
+  attendeeDogBreed: {
+    fontSize: 10,
+    color: '#64748B',
+  },
+  businessStandCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    padding: 12,
+    marginBottom: 10,
+  },
+  businessStandHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  businessStandLogo: {
+    width: 44,
+    height: 44,
+    borderRadius: 12,
+    backgroundColor: '#E2E8F0',
+  },
+  businessStandName: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: '#0F172A',
+  },
+  standBadge: {
+    backgroundColor: '#F3E8FF',
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 6,
+  },
+  standBadgeText: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#7E22CE',
+  },
+  businessStandCategory: {
+    fontSize: 11,
+    color: '#64748B',
+    marginTop: 2,
+    fontWeight: '600',
+  },
+  businessStandDesc: {
+    fontSize: 12,
+    color: '#334155',
+    lineHeight: 16,
+    marginVertical: 8,
+  },
+  businessBenefitBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: '#FAF5FF',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+    alignSelf: 'flex-start',
+  },
+  businessBenefitText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#7E22CE',
+  },
+  businessCalloutBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F0F9FF',
+    borderWidth: 1,
+    borderColor: '#BAE6FD',
+    borderRadius: 12,
+    padding: 12,
+    marginTop: 6,
+  },
+  businessCalloutTitle: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: '#0369A1',
+  },
+  businessCalloutSub: {
+    fontSize: 11,
+    color: '#0284C7',
+    marginTop: 2,
+    lineHeight: 15,
   },
 });

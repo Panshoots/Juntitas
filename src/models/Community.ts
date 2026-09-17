@@ -9,6 +9,15 @@ export interface SecondaryAdminPermissions {
   canManageVendors: boolean;
 }
 
+export interface SecondaryAdminInfo {
+  userId: string;
+  name: string;
+  email: string;
+  avatarUrl?: string;
+  permissions: SecondaryAdminPermissions;
+  assignedAt?: any;
+}
+
 export interface CommunityMember {
   userId: string;
   role: CommunityRole;
@@ -33,6 +42,7 @@ export interface Community {
   isVerified: boolean; // Insignia de verificación de identidad externa
   creatorId: string;
   primaryAdminId: string;
+  secondaryAdmins?: SecondaryAdminInfo[];
   status: CommunityStatus;
   membersCount: number;
   members?: string[];

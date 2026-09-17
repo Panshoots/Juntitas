@@ -341,3 +341,161 @@ export const createOfficialCommunity = async (
 
   return { success: true, id: commId, message: `¡Comunidad "${newComm.name}" creada y publicada oficialmente!` };
 };
+
+export const DEFAULT_SECONDARY_PERMISSIONS: SecondaryAdminPermissions = {
+  canCreateEvents: true,
+  canEditEvents: true,
+  canManageMembers: false,
+  canModeratePosts: true,
+  canManageAlbums: true,
+  canManageVendors: false
+};
+
+export const getSecondaryAdminsForCommunity = (community: Community): SecondaryAdminInfo[] => {
+  if (community?.secondaryAdmins && community.secondaryAdmins.length > 0) {
+    return community.secondaryAdmins;
+  }
+  return [
+    {
+      userId: 'sec-admin-1',
+      name: 'Andrea Soto',
+      email: 'andrea.soto@goldenretrieverschile.cl',
+      avatarUrl: 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=200',
+      permissions: {
+        canCreateEvents: true,
+        canEditEvents: true,
+        canManageMembers: false,
+        canModeratePosts: true,
+        canManageAlbums: true,
+        canManageVendors: false
+      },
+      assignedAt: new Date()
+    }
+  ];
+};
+
+export const updateSecondaryAdminPermissions = async (
+  communityId: string,
+  adminUserId: string,
+  permissions: SecondaryAdminPermissions,
+  operatorUserId: string
+): Promise<{ success: boolean; message: string; updatedAdmins?: SecondaryAdminInfo[] }> => {
+  const comm = localCommunities.find(c => c.id === communityId);
+  let admins = comm?.secondaryAdmins && comm.secondaryAdmins.length > 0
+    ? comm.secondaryAdmins
+    : getSecondaryAdminsForCommunity(comm || ({} as any));
+  
+  const target = admins.find(a => a.userId === adminUserId);
+  if (target) {
+    target.permissions = permissions;
+  }
+  if (comm) {
+    comm.secondaryAdmins = [...admins];
+  }
+
+  try {
+    await updateDoc(doc(db, 'communities', communityId), {
+      secondaryAdmins: admins,
+      updatedAt: serverTimestamp()
+    });
+  } catch (err) {
+    console.warn('Actualizando permisos de sub-admin localmente:', err);
+  }
+
+  await logAuditAction(
+    operatorUserId,
+    'SECONDARY_ADMIN_PERMISSIONS_UPDATE',
+    'communities',
+    communityId,
+    `Permisos de administrador secundario actualizados para ${target?.name || adminUserId}`
+  );
+
+  return { success: true, message: '¡Permisos delegados actualizados exitosamente!', updatedAdmins: admins };
+};
+
+export const removeSecondaryAdmin = async (
+  communityId: string,
+  adminUserId: string,
+  operatorUserId: string
+): Promise<{ success: boolean; message: string; updatedAdmins?: SecondaryAdminInfo[] }> => {
+  const comm = localCommunities.find(c => c.id === communityId);
+  let admins = (comm?.secondaryAdmins && comm.secondaryAdmins.length > 0
+    ? comm.secondaryAdmins
+    : getSecondaryAdminsForCommunity(comm || ({} as any))
+  ).filter(a => a.userId !== adminUserId);
+  
+  if (comm) {
+    comm.secondaryAdmins = [...admins];
+  }
+
+  try {
+    await updateDoc(doc(db, 'communities', communityId), {
+      secondaryAdmins: admins,
+      updatedAt: serverTimestamp()
+    });
+  } catch (err) {
+    console.warn('Removiendo sub-admin localmente:', err);
+  }
+
+  await logAuditAction(
+    operatorUserId,
+    'SECONDARY_ADMIN_REVOKE',
+    'communities',
+    communityId,
+    `Rol de administrador secundario revocado para ${adminUserId}`
+  );
+
+  return { success: true, message: 'Rol de administrador secundario revocado exitosamente.', updatedAdmins: admins };
+};
+
+export const addSecondaryAdmin = async (
+  communityId: string,
+  adminData: {
+    name: string;
+    email: string;
+    permissions?: SecondaryAdminPermissions;
+  },
+  operatorUserId: string
+): Promise<{ success: boolean; message: string; updatedAdmins?: SecondaryAdminInfo[] }> => {
+  const comm = localCommunities.find(c => c.id === communityId);
+  let admins = comm?.secondaryAdmins && comm.secondaryAdmins.length > 0
+    ? [...comm.secondaryAdmins]
+    : [...getSecondaryAdminsForCommunity(comm || ({} as any))];
+
+  const newAdmin: SecondaryAdminInfo = {
+    userId: 'sec-' + Date.now(),
+    name: adminData.name,
+    email: adminData.email,
+    avatarUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=200',
+    permissions: adminData.permissions || DEFAULT_SECONDARY_PERMISSIONS,
+    assignedAt: new Date()
+  };
+
+  admins.push(newAdmin);
+  if (comm) {
+    comm.secondaryAdmins = admins;
+  }
+
+  try {
+    await updateDoc(doc(db, 'communities', communityId), {
+      secondaryAdmins: admins,
+      updatedAt: serverTimestamp()
+    });
+  } catch (err) {
+    console.warn('Agregando sub-admin localmente:', err);
+  }
+
+  await logAuditAction(
+    operatorUserId,
+    'SECONDARY_ADMIN_ASSIGN',
+    'communities',
+    communityId,
+    `Nuevo administrador secundario delegado: ${adminData.name} (${adminData.email})`
+  );
+
+  return { 
+    success: true, 
+    message: `¡${adminData.name} ha sido designado(a) como Administrador(a) Secundario(a)!`, 
+    updatedAdmins: admins 
+  };
+};
