@@ -8,7 +8,8 @@ import {
   TextInput, 
   Image,
   ActivityIndicator,
-  FlatList
+  FlatList,
+  RefreshControl
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -68,6 +69,14 @@ export const BusinessPortalScreen: React.FC = () => {
       loadStoreRewards(found.id);
     }
     setLoadingBiz(false);
+  };
+
+  const [refreshing, setRefreshing] = useState(false);
+
+  const handleRefresh = async () => {
+    setRefreshing(true);
+    await loadBusinesses();
+    setRefreshing(false);
   };
 
   const loadStoreRewards = async (businessId: string) => {
@@ -151,7 +160,13 @@ export const BusinessPortalScreen: React.FC = () => {
   }
 
   return (
-    <ScrollView style={[styles.container, { paddingTop: insets.top + 10 }]} showsVerticalScrollIndicator={false}>
+    <ScrollView 
+      style={[styles.container, { paddingTop: insets.top + 10 }]} 
+      showsVerticalScrollIndicator={false}
+      refreshControl={
+        <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} colors={['#7E22CE']} tintColor="#7E22CE" />
+      }
+    >
       {/* Selector de Comercio si es Super Admin */}
       {isSuperAdmin && businesses.length > 1 && (
         <View style={styles.storeSelectorCard}>

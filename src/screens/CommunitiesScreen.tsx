@@ -8,7 +8,7 @@ import {
   TouchableOpacity, 
   TextInput, 
   Modal, 
-  Alert 
+  RefreshControl 
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -61,6 +61,8 @@ export const CommunitiesScreen: React.FC = () => {
   const [reqComuna, setReqComuna] = useState('Las Condes');
   const [reqSize, setReqSize] = useState('50');
 
+  const [refreshing, setRefreshing] = useState(false);
+
   useEffect(() => {
     loadCommunities();
     loadPhotos();
@@ -77,6 +79,12 @@ export const CommunitiesScreen: React.FC = () => {
   const loadPhotos = async () => {
     const data = await getCommunityPhotos();
     setPhotos(data);
+  };
+
+  const handleRefresh = async () => {
+    setRefreshing(true);
+    await Promise.all([loadCommunities(), loadPhotos()]);
+    setRefreshing(false);
   };
 
   const handleSelectRegion = (reg: ChileRegion) => {
@@ -139,8 +147,8 @@ export const CommunitiesScreen: React.FC = () => {
   };
 
   const handleSendRequest = async () => {
-    if (!reqName || !reqInstagram || !reqComuna) {
-      showToast('Por favor completa el nombre, Instagram y comuna.', 'warning');
+    if (!reqName.trim() || !reqDesc.trim() || !reqInstagram.trim()) {
+      showToast('Por favor completa todos los campos obligatorios para solicitar la comunidad.', 'warning');
       return;
     }
 
@@ -164,9 +172,9 @@ export const CommunitiesScreen: React.FC = () => {
 
     if (res.success) {
       showToast(
-        '¡Solicitud enviada al CRM! El Super Admin debe revisarla y aprobarla desde su Panel de Control para que se publique.',
+        '¡Solicitud enviada con éxito! Será validada pronto para que tu comunidad esté disponible para todos 🐾',
         'success',
-        'Solicitud en Espera'
+        'Comunidad en Validación'
       );
       setShowRequestModal(false);
       setReqName('');
@@ -281,6 +289,9 @@ export const CommunitiesScreen: React.FC = () => {
             data={filteredCommunities}
             keyExtractor={item => item.id}
             contentContainerStyle={styles.listContent}
+            refreshControl={
+              <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} colors={['#0284C7']} tintColor="#0284C7" />
+            }
             renderItem={({ item }) => {
               const isPrimary = activeProfile.roleType === 'primary_admin' && activeProfile.communityIdManaged === item.id;
               const isSecondary = activeProfile.roleType === 'secondary_admin' && activeProfile.communityIdManaged === item.id;
@@ -362,6 +373,9 @@ export const CommunitiesScreen: React.FC = () => {
             data={photos}
             keyExtractor={item => item.id}
             contentContainerStyle={styles.listContent}
+            refreshControl={
+              <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} colors={['#0284C7']} tintColor="#0284C7" />
+            }
             renderItem={({ item }) => {
               const canModerate = isSuperAdmin || activeProfile.roleType === 'primary_admin' || activeProfile.roleType === 'secondary_admin';
 
@@ -482,7 +496,7 @@ export const CommunitiesScreen: React.FC = () => {
               onPress={handleSendRequest}
             >
               <Text style={styles.submitReqButtonText}>
-                Enviar Solicitud al Super Admin (CRM)
+                Enviar para Validación
               </Text>
             </TouchableOpacity>
           </View>

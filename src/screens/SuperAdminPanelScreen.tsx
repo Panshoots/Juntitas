@@ -8,7 +8,7 @@ import {
   TextInput, 
   Modal, 
   ScrollView, 
-  Alert 
+  RefreshControl 
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -292,6 +292,9 @@ export const SuperAdminPanelScreen: React.FC = () => {
             data={filteredUsers}
             keyExtractor={item => item.id}
             contentContainerStyle={styles.listContent}
+            refreshControl={
+              <RefreshControl refreshing={loading} onRefresh={loadAllCrmData} colors={['#0284C7']} tintColor="#0284C7" />
+            }
             ListEmptyComponent={
               <View style={styles.emptyCard}>
                 <Text style={styles.emptyText}>No hay usuarios que coincidan con el filtro.</Text>
@@ -403,7 +406,13 @@ export const SuperAdminPanelScreen: React.FC = () => {
 
       {/* CONTENIDO PESTAÑA: COMUNIDADES */}
       {activeTab === 'communities' && (
-        <ScrollView style={styles.tabContentScroll} contentContainerStyle={{ paddingBottom: 100 }}>
+        <ScrollView 
+          style={styles.tabContentScroll} 
+          contentContainerStyle={{ paddingBottom: 100 }}
+          refreshControl={
+            <RefreshControl refreshing={loading} onRefresh={loadAllCrmData} colors={['#0284C7']} tintColor="#0284C7" />
+          }
+        >
           <Text style={styles.subSectionTitle}>Solicitudes de Comunidades ({communityRequests.filter(r => r.status === 'pending').length})</Text>
 
           {communityRequests.filter(r => r.status === 'pending').length === 0 ? (
@@ -455,6 +464,9 @@ export const SuperAdminPanelScreen: React.FC = () => {
           data={auditLogs}
           keyExtractor={item => item.id}
           contentContainerStyle={styles.listContent}
+          refreshControl={
+            <RefreshControl refreshing={loading} onRefresh={loadAllCrmData} colors={['#0284C7']} tintColor="#0284C7" />
+          }
           renderItem={({ item }) => (
             <View style={styles.auditCard}>
               <View style={styles.auditHeaderRow}>

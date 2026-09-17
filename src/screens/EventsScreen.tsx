@@ -7,7 +7,8 @@ import {
   Image, 
   TouchableOpacity, 
   Modal,
-  TextInput 
+  TextInput,
+  RefreshControl 
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -52,9 +53,17 @@ export const EventsScreen: React.FC = () => {
     }
   }, [currentDogs]);
 
+  const [refreshing, setRefreshing] = useState(false);
+
   const loadEvents = async () => {
     const data = await getEvents();
     setEvents(data);
+  };
+
+  const handleRefresh = async () => {
+    setRefreshing(true);
+    await loadEvents();
+    setRefreshing(false);
   };
 
   const toggleDogSelection = (id: string) => {
@@ -172,6 +181,9 @@ export const EventsScreen: React.FC = () => {
         data={events}
         keyExtractor={item => item.id}
         contentContainerStyle={styles.listContent}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} colors={['#0284C7']} tintColor="#0284C7" />
+        }
         renderItem={({ item }) => {
           const badge = getStatusBadge(item.status);
           return (

@@ -6,7 +6,8 @@ import {
   ScrollView, 
   TouchableOpacity, 
   Image,
-  Modal 
+  Modal,
+  RefreshControl 
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -20,6 +21,7 @@ import { checkAndClaimDailyStreak, DailyStreakResult } from '../services/streakS
 import { SurprisePawModal } from '../components/SurprisePawModal';
 import { SurprisePawReward } from '../models/Gamification';
 import { useAuth } from '../context/AuthContext';
+import { getUserByIdFromDb } from '../services/userService';
 
 export const HomeScreen: React.FC = () => {
   const navigation = useNavigation<any>();
@@ -80,8 +82,27 @@ export const HomeScreen: React.FC = () => {
     setShowSurpriseModal(false);
   };
 
+  const [refreshing, setRefreshing] = useState(false);
+
+  const handleRefresh = React.useCallback(async () => {
+    setRefreshing(true);
+    if (currentUser?.id) {
+      const u = await getUserByIdFromDb(currentUser.id);
+      if (u) {
+        setPawBalance(u.pawBalance || 0);
+      }
+    }
+    setRefreshing(false);
+  }, [currentUser?.id]);
+
   return (
-    <ScrollView style={[styles.container, { paddingTop: insets.top + 10 }]} showsVerticalScrollIndicator={false}>
+    <ScrollView 
+      style={[styles.container, { paddingTop: insets.top + 10 }]} 
+      showsVerticalScrollIndicator={false}
+      refreshControl={
+        <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} colors={['#0284C7']} tintColor="#0284C7" />
+      }
+    >
       {/* Header Principal con balance de Huellitas */}
       <View style={styles.topHeader}>
         <View>

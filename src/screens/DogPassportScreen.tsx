@@ -1,11 +1,12 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { 
   View, 
   Text, 
   StyleSheet, 
   Image, 
   ScrollView, 
-  TouchableOpacity 
+  TouchableOpacity,
+  RefreshControl 
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Dog } from '../models/Dog';
@@ -17,42 +18,49 @@ export const DogPassportScreen: React.FC<{ route?: { params?: { dog?: Dog } } }>
   const navigation = useNavigation<any>();
   const insets = useSafeAreaInsets();
   const { currentDogs } = useAuth();
+  const [refreshing, setRefreshing] = useState(false);
+
+  const handleRefresh = () => {
+    setRefreshing(true);
+    setTimeout(() => setRefreshing(false), 500);
+  };
   
   const dog = route?.params?.dog || currentDogs[0] || {
     id: 'demo-dog',
     ownerId: 'user-1',
     name: 'Mi Perrito',
     breed: 'Mestizo / Otro',
-    isMixed: false,
-    birthDate: new Date(2022, 5, 15),
+    size: 'mediano',
+    birthDate: new Date(2023, 5, 15),
     gender: 'macho',
-    size: 'grande',
-    description: 'Amante de las pelotas de tenis y nadar en la laguna.',
-    personalityTraits: ['Sociable', 'Juguetón', 'Enérgico'],
-    photoUrls: ['https://images.unsplash.com/photo-1552053831-71594a27632d?w=600'],
+    isMixed: false,
+    photoUrls: ['https://images.unsplash.com/photo-1552053831-71594a27632d?w=400'],
     passport: {
-      attendedEventsCount: 5,
-      badges: ['explorador_parque', 'primer_aniversario', 'amigo_fiel'],
-      highlightPhotos: ['https://images.unsplash.com/photo-1552053831-71594a27632d?w=600'],
-      seniorityDate: new Date(2024, 0, 10),
-      communitiesCount: 2,
-      honorTitle: 'Veterano de Juntas'
-    },
-    createdAt: new Date()
-  } as Dog;
+      qrCode: 'PUPPY-PASS-DEMO',
+      attendedEventsCount: 3,
+      honorTitle: 'Perrito Aventurero',
+      badges: []
+    }
+  };
 
-  const calculateAge = (birthDate: any) => {
-    if (!birthDate) return 'Desconocida';
-    const birth = birthDate.toDate ? birthDate.toDate() : new Date(birthDate);
-    const diff = Date.now() - birth.getTime();
-    const ageDate = new Date(diff);
+  const calculateAge = (date: Date | any) => {
+    if (!date) return 'Desconocida';
+    const bDate = date.toDate ? date.toDate() : new Date(date);
+    const diffMs = Date.now() - bDate.getTime();
+    const ageDate = new Date(diffMs);
     const years = Math.abs(ageDate.getUTCFullYear() - 1970);
     const months = ageDate.getUTCMonth();
     return years > 0 ? `${years} año(s)` : `${months} mes(es)`;
   };
 
   return (
-    <ScrollView style={[styles.container, { paddingTop: insets.top }]} showsVerticalScrollIndicator={false}>
+    <ScrollView 
+      style={[styles.container, { paddingTop: insets.top }]} 
+      showsVerticalScrollIndicator={false}
+      refreshControl={
+        <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} colors={['#0284C7']} tintColor="#0284C7" />
+      }
+    >
       <View style={styles.topBar}>
         <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
           <Ionicons name="arrow-back" size={24} color="#1E293B" />

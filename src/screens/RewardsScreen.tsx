@@ -7,7 +7,8 @@ import {
   Image, 
   TouchableOpacity, 
   Modal,
-  ActivityIndicator 
+  ActivityIndicator,
+  RefreshControl 
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -15,6 +16,7 @@ import { RewardItem } from '../models/Gamification';
 import { getRewardsFromDb, redeemRewardInDb } from '../services/rewardService';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
+import { getUserByIdFromDb } from '../services/userService';
 
 export const RewardsScreen: React.FC = () => {
   const insets = useSafeAreaInsets();
@@ -39,11 +41,23 @@ export const RewardsScreen: React.FC = () => {
     }
   }, [currentUser?.pawBalance]);
 
+  const [refreshing, setRefreshing] = useState(false);
+
   const loadRewards = async () => {
     setLoading(true);
     const data = await getRewardsFromDb(activeTab);
     setRewardsList(data);
     setLoading(false);
+  };
+
+  const handleRefresh = async () => {
+    setRefreshing(true);
+    await loadRewards();
+    if (currentUser?.id) {
+      const u = await getUserByIdFromDb(currentUser.id);
+      if (u) setPawBalance(u.pawBalance || 0);
+    }
+    setRefreshing(false);
   };
 
   const handleRedeem = async (item: RewardItem) => {
@@ -108,6 +122,9 @@ export const RewardsScreen: React.FC = () => {
           data={rewardsList}
           keyExtractor={item => item.id}
           contentContainerStyle={styles.listContent}
+          refreshControl={
+            <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} colors={['#0284C7']} tintColor="#0284C7" />
+          }
           ListEmptyComponent={
             <View style={styles.emptyContainer}>
               <View style={styles.emptyIconCircle}>

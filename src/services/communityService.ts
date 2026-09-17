@@ -47,7 +47,7 @@ export const submitCommunityRequest = async (
     `Solicitud para fundar la comunidad: ${requestData.communityName}`
   );
 
-  return { success: true, id: req.id, message: 'Solicitud de comunidad enviada para revisión oficial por el Super Admin.' };
+  return { success: true, id: req.id, message: '¡Solicitud enviada con éxito! Será validada pronto para que tu comunidad esté disponible.' };
 };
 
 export const getCommunityRequests = async (): Promise<CommunityRequest[]> => {

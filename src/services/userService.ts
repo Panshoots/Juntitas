@@ -199,3 +199,16 @@ export const updateUserDetailsInDb = async (
 
   return { success: true, message: 'Datos de usuario actualizados.' };
 };
+
+export const getUserByIdFromDb = async (userId: string): Promise<AppUser | null> => {
+  try {
+    const snap = await getDoc(doc(db, 'users', userId));
+    if (snap.exists()) {
+      const data = snap.data();
+      return { id: snap.id, ...data } as AppUser;
+    }
+  } catch (e) {
+    console.warn('Error fetching user by id:', e);
+  }
+  return localUsers.find(u => u.id === userId) || null;
+};

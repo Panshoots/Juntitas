@@ -9,7 +9,7 @@ import {
   Switch,
   Modal,
   TextInput,
-  Alert
+  RefreshControl
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -145,9 +145,25 @@ export const UserProfileScreen: React.FC = () => {
     }).catch(err => console.warn('Error cargando razas:', err));
   }, []);
 
+  const [refreshing, setRefreshing] = useState(false);
+
   const loadRedemptions = async () => {
     const list = await getUserRedemptions(currentUser.id);
     setUserRedemptions(list);
+  };
+
+  const handleRefresh = async () => {
+    setRefreshing(true);
+    if (currentUser?.id) {
+      await loadRedemptions();
+      try {
+        const breeds = await getDogBreeds();
+        if (breeds && breeds.length > 0) setAvailableBreeds(breeds);
+      } catch (e) {
+        console.warn('Error refreshing breeds:', e);
+      }
+    }
+    setRefreshing(false);
   };
 
   // Manejadores de foto de perfil de usuario
@@ -262,7 +278,13 @@ export const UserProfileScreen: React.FC = () => {
   const reachedDogLimit = currentDogs.length >= MAX_DOGS_STANDARD_PLAN;
 
   return (
-    <ScrollView style={[styles.container, { paddingTop: insets.top }]} showsVerticalScrollIndicator={false}>
+    <ScrollView 
+      style={[styles.container, { paddingTop: insets.top }]} 
+      showsVerticalScrollIndicator={false}
+      refreshControl={
+        <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} colors={['#0284C7']} tintColor="#0284C7" />
+      }
+    >
       {/* Cabecera de Perfil */}
       <View style={styles.header}>
         <View style={styles.avatarContainer}>

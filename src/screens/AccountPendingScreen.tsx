@@ -22,7 +22,7 @@ export const AccountPendingScreen: React.FC = () => {
         </View>
 
         <Text style={styles.title}>
-          {isSuspended ? 'Cuenta Suspendida' : 'Cuenta en Revisión Oficial'}
+          {isSuspended ? 'Cuenta Suspendida' : 'Cuenta en Validación'}
         </Text>
 
         <Text style={styles.userBadge}>
@@ -31,14 +31,14 @@ export const AccountPendingScreen: React.FC = () => {
 
         <Text style={styles.description}>
           {isSuspended
-            ? `Tu cuenta ha sido suspendida por la administración de Juntitas. Motivo: ${currentUser.suspendedReason || 'Incumplimiento de las normas comunitarias.'}`
-            : `Has solicitado un perfil de ${currentUser.filterProfileType === 'community_admin' ? 'Líder Comunitario' : currentUser.filterProfileType === 'business' ? 'Tienda / Comercio' : 'Usuario con filtro'}. Para proteger a la comunidad, un Super Administrador debe revisar tus antecedentes y habilitar tu cuenta en el CRM.`}
+            ? `Tu cuenta ha sido pausada temporalmente. Motivo: ${currentUser.suspendedReason || 'Incumplimiento de las normas de convivencia.'}`
+            : `Has solicitado un perfil de ${currentUser.filterProfileType === 'community_admin' ? 'Líder Comunitario' : currentUser.filterProfileType === 'business' ? 'Tienda / Comercio' : 'Usuario especial'}. Tus datos serán validados pronto para asegurar la mejor experiencia para todos los perritos y tutores 🐾.`}
         </Text>
 
         <View style={styles.infoBox}>
           <Ionicons name="shield-checkmark" size={20} color="#0284C7" />
           <Text style={styles.infoBoxText}>
-            Regla R-0601 / R-1401: La moderación activa asegura que las comunidades y comercios participantes sean reales y confiables para los tutores.
+            La validación permite garantizar que las comunidades y comercios participantes sean reales y de total confianza.
           </Text>
         </View>
 
