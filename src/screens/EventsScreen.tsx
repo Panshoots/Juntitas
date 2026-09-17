@@ -12,8 +12,17 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { DogEvent, EventStatus } from '../models/Event';
-import { getEvents, registerForEvent, openGoogleMapsUrl, createEvent } from '../services/eventService';
+import { DogEvent, DogAttendeeSummary, EventStatus } from '../models/Event';
+import { 
+  getEvents, 
+  registerForEvent, 
+  updateEventAttendance, 
+  cancelEventAttendance, 
+  getUserAttendances, 
+  openGoogleMapsUrl, 
+  createEvent 
+} from '../services/eventService';
+import { awardPaws } from '../services/gamificationService';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
 
@@ -22,7 +31,9 @@ export const EventsScreen: React.FC = () => {
   const { activeProfile, currentUser, currentDogs, isSuperAdmin, canCreateEventFor } = useAuth();
   const { showToast } = useToast();
   const [events, setEvents] = useState<DogEvent[]>([]);
+  const [attendancesMap, setAttendancesMap] = useState<Record<string, DogAttendeeSummary[]>>({});
   const [selectedEvent, setSelectedEvent] = useState<DogEvent | null>(null);
+  const [modalMode, setModalMode] = useState<'register' | 'edit'>('register');
   const [showRegisterModal, setShowRegisterModal] = useState(false);
   const [showCreateEventModal, setShowCreateEventModal] = useState(false);
 
@@ -42,7 +53,7 @@ export const EventsScreen: React.FC = () => {
 
   useEffect(() => {
     loadEvents();
-  }, []);
+  }, [currentUser?.id]);
 
   useEffect(() => {
     // Inicializar primer perro seleccionado si existe
@@ -58,6 +69,10 @@ export const EventsScreen: React.FC = () => {
   const loadEvents = async () => {
     const data = await getEvents();
     setEvents(data);
+    if (currentUser?.id) {
+      const atts = await getUserAttendances(currentUser.id);
+      setAttendancesMap(atts);
+    }
   };
 
   const handleRefresh = async () => {
@@ -70,14 +85,36 @@ export const EventsScreen: React.FC = () => {
     setSelectedDogIds(prev => ({ ...prev, [id]: !prev[id] }));
   };
 
-  const handleConfirmAttendance = async () => {
-    if (!selectedEvent) return;
+  const handleOpenAttendanceModal = (event: DogEvent, mode: 'register' | 'edit') => {
+    setSelectedEvent(event);
+    setModalMode(mode);
+
+    if (mode === 'edit') {
+      const currentAttDogs = attendancesMap[event.id] || [];
+      const map: Record<string, boolean> = {};
+      if (currentAttDogs.length > 0) {
+        currentAttDogs.forEach(d => { map[d.dogId] = true; });
+      } else if (currentDogs.length > 0) {
+        map[currentDogs[0].id] = true;
+      }
+      setSelectedDogIds(map);
+    } else {
+      if (currentDogs.length > 0) {
+        setSelectedDogIds({ [currentDogs[0].id]: true });
+      }
+    }
+    setShowRegisterModal(true);
+  };
+
+  const handleSaveAttendance = async () => {
+    if (!selectedEvent || !currentUser?.id) return;
     const selected = currentDogs
       .filter(d => selectedDogIds[d.id])
       .map(d => ({
         dogId: d.id,
         name: d.name,
-        breed: d.breed
+        breed: d.breed,
+        photoUrl: d.photoUrls?.[0]
       }));
 
     if (selected.length === 0) {
@@ -85,16 +122,44 @@ export const EventsScreen: React.FC = () => {
       return;
     }
 
-    const res = await registerForEvent(
-      selectedEvent.id,
-      currentUser.id,
-      currentUser.displayName,
-      currentUser.photoURL || undefined,
-      true,
-      selected
-    );
+    if (modalMode === 'register') {
+      const res = await registerForEvent(
+        selectedEvent.id,
+        currentUser.id,
+        currentUser.displayName,
+        currentUser.photoURL || undefined,
+        true,
+        selected
+      );
 
-    showToast(res.message, res.success ? 'success' : 'error');
+      showToast(res.message, res.success ? 'success' : 'error');
+      if (res.success) {
+        await awardPaws(currentUser.id, 'event_attended', selectedEvent.id);
+        setShowRegisterModal(false);
+        loadEvents();
+      }
+    } else {
+      const res = await updateEventAttendance(
+        selectedEvent.id,
+        currentUser.id,
+        selected
+      );
+
+      showToast(res.message, res.success ? 'success' : 'error');
+      if (res.success) {
+        setShowRegisterModal(false);
+        loadEvents();
+      }
+    }
+  };
+
+  const handleCancelAttendance = async () => {
+    if (!selectedEvent || !currentUser?.id) return;
+    const confirmCancel = confirm('¿Estás seguro de que deseas cancelar tu asistencia a esta junta?');
+    if (!confirmCancel) return;
+
+    const res = await cancelEventAttendance(selectedEvent.id, currentUser.id);
+    showToast(res.message, res.success ? 'success' : 'info');
     if (res.success) {
       setShowRegisterModal(false);
       loadEvents();
@@ -240,34 +305,69 @@ export const EventsScreen: React.FC = () => {
                   )}
                 </View>
 
-                <TouchableOpacity 
-                  style={styles.attendButton}
-                  onPress={() => {
-                    setSelectedEvent(item);
-                    setShowRegisterModal(true);
-                  }}
-                >
-                  <Text style={styles.attendButtonText}>🐾 Confirmar Asistencia (+100 🐾)</Text>
-                </TouchableOpacity>
+                {(() => {
+                  const userAttendance = attendancesMap[item.id];
+                  const isAttending = !!userAttendance || item.attendeeUserIds?.includes(currentUser?.id);
+
+                  if (isAttending) {
+                    const dogsCountText = userAttendance && userAttendance.length > 0 
+                      ? `${userAttendance.length} perrito${userAttendance.length > 1 ? 's' : ''}`
+                      : 'registrado';
+                    return (
+                      <View style={styles.attendingRow}>
+                        <View style={styles.attendingBadge}>
+                          <Ionicons name="checkmark-circle" size={20} color="#15803D" />
+                          <View style={{ flex: 1 }}>
+                            <Text style={styles.attendingBadgeText}>¡Ya estás inscrito!</Text>
+                            <Text style={styles.attendingSubText}>🐾 Asistirás con {dogsCountText}</Text>
+                          </View>
+                        </View>
+                        <TouchableOpacity 
+                          style={styles.editAttendanceBtn}
+                          onPress={() => handleOpenAttendanceModal(item, 'edit')}
+                        >
+                          <Ionicons name="create-outline" size={15} color="#0284C7" />
+                          <Text style={styles.editAttendanceBtnText}>
+                            {currentDogs.length > 1 ? 'Modificar' : 'Ver'}
+                          </Text>
+                        </TouchableOpacity>
+                      </View>
+                    );
+                  }
+
+                  return (
+                    <TouchableOpacity 
+                      style={styles.attendButton}
+                      onPress={() => handleOpenAttendanceModal(item, 'register')}
+                    >
+                      <Text style={styles.attendButtonText}>🐾 Confirmar Asistencia (+100 🐾)</Text>
+                    </TouchableOpacity>
+                  );
+                })()}
               </View>
             </View>
           );
         }}
       />
 
-      {/* Modal de Inscripción con Selección de Perritos (Sección 12 Plan Maestro) */}
+      {/* Modal de Inscripción y Modificación de Asistencia con Selección de Perritos */}
       <Modal visible={showRegisterModal} transparent animationType="slide">
         <View style={styles.modalOverlay}>
           <View style={styles.modalCard}>
             <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Inscribirse a la Junta</Text>
+              <Text style={styles.modalTitle}>
+                {modalMode === 'register' ? '🐾 Inscribirse a la Junta' : '✏️ Modificar Perrito(s)'}
+              </Text>
               <TouchableOpacity onPress={() => setShowRegisterModal(false)}>
                 <Ionicons name="close" size={24} color="#64748B" />
               </TouchableOpacity>
             </View>
 
             <Text style={styles.modalSubtitle}>
-              ¿Qué perrito o perritos te acompañarán a {selectedEvent?.title}?
+              {modalMode === 'register' 
+                ? `¿Qué perrito o perritos te acompañarán a ${selectedEvent?.title}?`
+                : `Selecciona con cuál(es) de tus perritos asistirás a ${selectedEvent?.title}:`
+              }
             </Text>
 
             {currentDogs.length === 0 ? (
@@ -305,17 +405,32 @@ export const EventsScreen: React.FC = () => {
             <View style={styles.infoCallout}>
               <Ionicons name="shield-checkmark" size={18} color="#0284C7" />
               <Text style={styles.infoCalloutText}>
-                Regla R-1203: La plataforma cuenta por separado tutores y perros para planificar hidratación, espacio y seguridad.
+                {modalMode === 'register' 
+                  ? 'Regla R-1203: La plataforma cuenta por separado tutores y perros para planificar hidratación, espacio y seguridad.'
+                  : 'Puedes ajustar tus perritos acompañantes en cualquier momento antes de la junta.'
+                }
               </Text>
             </View>
 
             <TouchableOpacity 
               style={[styles.confirmButton, currentDogs.length === 0 && { opacity: 0.5 }]} 
-              onPress={handleConfirmAttendance}
+              onPress={handleSaveAttendance}
               disabled={currentDogs.length === 0}
             >
-              <Text style={styles.confirmButtonText}>¡Confirmar Asistencia!</Text>
+              <Text style={styles.confirmButtonText}>
+                {modalMode === 'register' ? '¡Confirmar Asistencia (+100 🐾)!' : 'Guardar Cambios'}
+              </Text>
             </TouchableOpacity>
+
+            {modalMode === 'edit' && (
+              <TouchableOpacity 
+                style={styles.cancelAttendanceBtn}
+                onPress={handleCancelAttendance}
+              >
+                <Ionicons name="close-circle-outline" size={16} color="#DC2626" />
+                <Text style={styles.cancelAttendanceBtnText}>Cancelar mi asistencia a esta junta</Text>
+              </TouchableOpacity>
+            )}
           </View>
         </View>
       </Modal>
@@ -680,5 +795,68 @@ const styles = StyleSheet.create({
     color: '#6B21A8',
     fontWeight: '600',
     flex: 1,
+  },
+  attendingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#F0FDF4',
+    borderWidth: 1.5,
+    borderColor: '#BBF7D0',
+    borderRadius: 14,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    marginTop: 6,
+    gap: 8,
+  },
+  attendingBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    flex: 1,
+  },
+  attendingBadgeText: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#15803D',
+  },
+  attendingSubText: {
+    fontSize: 11,
+    color: '#166534',
+    marginTop: 2,
+    fontWeight: '600',
+  },
+  editAttendanceBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1.5,
+    borderColor: '#BAE6FD',
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    borderRadius: 10,
+  },
+  editAttendanceBtnText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#0284C7',
+  },
+  cancelAttendanceBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 11,
+    borderRadius: 12,
+    marginTop: 10,
+    backgroundColor: '#FEF2F2',
+    borderWidth: 1,
+    borderColor: '#FECACA',
+  },
+  cancelAttendanceBtnText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#DC2626',
   },
 });

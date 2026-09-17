@@ -4,6 +4,7 @@ import {
   Text, 
   StyleSheet, 
   FlatList, 
+  ScrollView,
   Image, 
   TouchableOpacity, 
   TextInput, 
@@ -153,6 +154,11 @@ export const CommunitiesScreen: React.FC = () => {
   const handleJoin = async (community: Community) => {
     if (!currentUser || !currentUser.id) {
       showToast('Debes iniciar sesión para unirte a una comunidad.', 'warning');
+      return;
+    }
+    const isAlreadyMember = (community.members && community.members.includes(currentUser.id)) || community.primaryAdminId === currentUser.id;
+    if (isAlreadyMember) {
+      showToast(`¡Ya eres miembro de la comunidad ${community.name}!`, 'info');
       return;
     }
     const res = await joinCommunity(community.id, currentUser.id);
@@ -357,8 +363,9 @@ export const CommunitiesScreen: React.FC = () => {
               <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} colors={['#0284C7']} tintColor="#0284C7" />
             }
             renderItem={({ item }) => {
-              const isPrimary = activeProfile.roleType === 'primary_admin' && activeProfile.communityIdManaged === item.id;
+              const isPrimary = (activeProfile.roleType === 'primary_admin' && activeProfile.communityIdManaged === item.id) || item.primaryAdminId === currentUser.id;
               const isSecondary = activeProfile.roleType === 'secondary_admin' && activeProfile.communityIdManaged === item.id;
+              const isMember = isPrimary || isSecondary || (item.members && item.members.includes(currentUser.id));
 
               return (
                 <TouchableOpacity 
@@ -403,12 +410,19 @@ export const CommunitiesScreen: React.FC = () => {
                           <Ionicons name="eye" size={13} color="#0284C7" />
                           <Text style={styles.exploreBtnText}>Ver</Text>
                         </TouchableOpacity>
-                        <TouchableOpacity 
-                          style={styles.joinButton} 
-                          onPress={() => handleJoin(item)}
-                        >
-                          <Text style={styles.joinButtonText}>Unirme (+10 🐾)</Text>
-                        </TouchableOpacity>
+                        {isMember ? (
+                          <View style={styles.joinedBadge}>
+                            <Ionicons name="checkmark-circle" size={13} color="#059669" />
+                            <Text style={styles.joinedBadgeText}>Miembro</Text>
+                          </View>
+                        ) : (
+                          <TouchableOpacity 
+                            style={styles.joinButton} 
+                            onPress={() => handleJoin(item)}
+                          >
+                            <Text style={styles.joinButtonText}>Unirme (+10 🐾)</Text>
+                          </TouchableOpacity>
+                        )}
                       </View>
                     </View>
 
@@ -719,6 +733,29 @@ export const CommunitiesScreen: React.FC = () => {
                       <Text style={styles.detailCommLocation}>
                         📍 {selectedCommunityDetail.comuna}, {selectedCommunityDetail.region}
                       </Text>
+                      {(() => {
+                        const isPrimary = (activeProfile.roleType === 'primary_admin' && activeProfile.communityIdManaged === selectedCommunityDetail.id) || selectedCommunityDetail.primaryAdminId === currentUser.id;
+                        const isSecondary = activeProfile.roleType === 'secondary_admin' && activeProfile.communityIdManaged === selectedCommunityDetail.id;
+                        const isMember = isPrimary || isSecondary || (selectedCommunityDetail.members && selectedCommunityDetail.members.includes(currentUser.id));
+
+                        if (isMember) {
+                          return (
+                            <View style={styles.detailMemberBadge}>
+                              <Ionicons name="checkmark-circle" size={13} color="#15803D" />
+                              <Text style={styles.detailMemberBadgeText}>Eres miembro</Text>
+                            </View>
+                          );
+                        }
+                        return (
+                          <TouchableOpacity 
+                            style={styles.detailJoinBtn}
+                            onPress={() => handleJoin(selectedCommunityDetail)}
+                          >
+                            <Ionicons name="add-circle" size={13} color="#FFFFFF" />
+                            <Text style={styles.detailJoinBtnText}>Unirme (+10 🐾)</Text>
+                          </TouchableOpacity>
+                        );
+                      })()}
                     </View>
                   </View>
                   <TouchableOpacity onPress={() => setShowDetailModal(false)}>
@@ -1814,5 +1851,53 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: '#334155',
     marginTop: 4,
+  },
+  joinedBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#DCFCE7',
+    borderWidth: 1,
+    borderColor: '#BBF7D0',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 10,
+  },
+  joinedBadgeText: {
+    color: '#15803D',
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  detailMemberBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#DCFCE7',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 8,
+    marginTop: 4,
+    alignSelf: 'flex-start',
+  },
+  detailMemberBadgeText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#15803D',
+  },
+  detailJoinBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#0284C7',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+    marginTop: 4,
+    alignSelf: 'flex-start',
+  },
+  detailJoinBtnText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#FFFFFF',
   },
 });

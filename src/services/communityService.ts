@@ -228,6 +228,7 @@ export const getCommunities = async (): Promise<Community[]> => {
           isVerified: !!data.isVerified,
           joinType: data.joinType || 'libre',
           membersCount: data.membersCount || 1,
+          members: data.members || (data.primaryAdminId ? [data.primaryAdminId] : []),
           eventsCount: data.eventsCount || 0,
           primaryAdminId: data.primaryAdminId || '',
           secondaryAdmins: data.secondaryAdmins || [],
@@ -251,7 +252,7 @@ export const joinCommunity = async (communityId: string, userId: string): Promis
     if (commSnap.exists()) {
       const data = commSnap.data();
       const currentMembers: string[] = data.members || [];
-      if (currentMembers.includes(userId)) {
+      if (currentMembers.includes(userId) || data.primaryAdminId === userId) {
         return { success: false, message: `¡Ya eres miembro de la comunidad ${data.name || ''}!` };
       }
       const newCount = (data.membersCount || 0) + 1;
@@ -261,7 +262,11 @@ export const joinCommunity = async (communityId: string, userId: string): Promis
         updatedAt: serverTimestamp()
       });
       const local = localCommunities.find(c => c.id === communityId);
-      if (local) local.membersCount = newCount;
+      if (local) {
+        local.membersCount = newCount;
+        if (!local.members) local.members = [];
+        if (!local.members.includes(userId)) local.members.push(userId);
+      }
       return { success: true, message: `¡Te has unido exitosamente a ${data.name}!` };
     }
   } catch (err) {
@@ -271,6 +276,12 @@ export const joinCommunity = async (communityId: string, userId: string): Promis
   const comm = localCommunities.find(c => c.id === communityId);
   if (!comm) return { success: false, message: 'Comunidad no encontrada.' };
 
+  if (!comm.members) comm.members = comm.primaryAdminId ? [comm.primaryAdminId] : [];
+  if (comm.members.includes(userId) || comm.primaryAdminId === userId) {
+    return { success: false, message: `¡Ya eres miembro de la comunidad ${comm.name}!` };
+  }
+
+  comm.members.push(userId);
   comm.membersCount += 1;
   return { success: true, message: '¡Te has unido exitosamente a ' + comm.name + '!' };
 };

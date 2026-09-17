@@ -82,6 +82,7 @@ export interface DogEvent {
   acceptsBusinesses: boolean;
   tutorsCount: number;
   dogsCount: number;
+  attendeeUserIds?: string[];
   organizerUserIds: string[];
   changeLogs: EventChangeRecord[];
   photosAlbum: EventPhoto[];

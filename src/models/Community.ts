@@ -35,6 +35,7 @@ export interface Community {
   primaryAdminId: string;
   status: CommunityStatus;
   membersCount: number;
+  members?: string[];
   eventsCount: number;
   createdAt: any;
   updatedAt?: any;

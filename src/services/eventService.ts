@@ -6,13 +6,29 @@ import {
   setDoc, 
   addDoc, 
   updateDoc, 
-  serverTimestamp 
+  serverTimestamp,
+  query,
+  where,
+  arrayUnion,
+  arrayRemove,
+  increment 
 } from 'firebase/firestore';
 import { db } from '../firebase/config';
 import { DogEvent, DogAttendeeSummary, EventStatus } from '../models/Event';
 import { logAuditAction } from './auditService';
 
+export interface UserAttendanceRecord {
+  id?: string;
+  eventId: string;
+  userId: string;
+  userName: string;
+  selectedDogs: DogAttendeeSummary[];
+  status: 'CONFIRMADO' | 'CANCELADO';
+  timestamp: any;
+}
+
 let localEvents: DogEvent[] = [];
+let localAttendances: UserAttendanceRecord[] = [];
 
 export const getEvents = async (communityId?: string): Promise<DogEvent[]> => {
   try {
@@ -41,6 +57,7 @@ export const getEvents = async (communityId?: string): Promise<DogEvent[]> => {
           status: data.status || 'programada',
           tutorsCount: data.tutorsCount || 0,
           dogsCount: data.dogsCount || 0,
+          attendeeUserIds: data.attendeeUserIds || [],
           acceptsBusinesses: !!data.acceptsBusinesses,
           creatorUserId: data.creatorUserId || '',
           changeLogs: [],
@@ -61,6 +78,36 @@ export const getEvents = async (communityId?: string): Promise<DogEvent[]> => {
     }
     return [...localEvents];
   }
+};
+
+export const getUserAttendances = async (userId: string): Promise<Record<string, DogAttendeeSummary[]>> => {
+  const result: Record<string, DogAttendeeSummary[]> = {};
+  try {
+    const q = query(
+      collection(db, 'eventAttendances'),
+      where('userId', '==', userId),
+      where('status', '==', 'CONFIRMADO')
+    );
+    const snap = await getDocs(q);
+    if (!snap.empty) {
+      snap.forEach(d => {
+        const data = d.data();
+        result[data.eventId] = data.selectedDogs || [];
+      });
+      return result;
+    }
+  } catch (err) {
+    console.warn('Leyendo asistencias de Firestore:', err);
+  }
+
+  // Fallback memoria local
+  localAttendances
+    .filter(a => a.userId === userId && a.status === 'CONFIRMADO')
+    .forEach(a => {
+      result[a.eventId] = a.selectedDogs;
+    });
+
+  return result;
 };
 
 export const createEvent = async (
@@ -140,19 +187,41 @@ export const registerForEvent = async (
     return { success: false, message: 'Debes seleccionar al menos un perrito para asistir a la junta.' };
   }
 
-  const ev = localEvents.find(e => e.id === eventId);
-  if (!ev) return { success: false, message: 'Junta no encontrada.' };
+  const existingLocal = localAttendances.find(a => a.eventId === eventId && a.userId === userId && a.status === 'CONFIRMADO');
+  if (existingLocal) {
+    return { success: false, message: '¡Ya estás inscrito en esta junta! Puedes editar tus perritos acompañantes.' };
+  }
 
-  ev.tutorsCount += 1;
-  ev.dogsCount += selectedDogs.length;
+  const ev = localEvents.find(e => e.id === eventId);
+  if (ev) {
+    if (ev.attendeeUserIds?.includes(userId)) {
+      return { success: false, message: '¡Ya confirmaste tu asistencia a esta junta!' };
+    }
+    ev.tutorsCount += 1;
+    ev.dogsCount += selectedDogs.length;
+    if (!ev.attendeeUserIds) ev.attendeeUserIds = [];
+    ev.attendeeUserIds.push(userId);
+  }
+
+  const attendanceObj: UserAttendanceRecord = {
+    id: 'att-' + Date.now(),
+    eventId,
+    userId,
+    userName,
+    selectedDogs,
+    status: 'CONFIRMADO',
+    timestamp: new Date()
+  };
+  localAttendances.push(attendanceObj);
 
   try {
     await updateDoc(doc(db, 'events', eventId), {
-      tutorsCount: ev.tutorsCount,
-      dogsCount: ev.dogsCount,
+      tutorsCount: ev ? ev.tutorsCount : increment(1),
+      dogsCount: ev ? ev.dogsCount : increment(selectedDogs.length),
+      attendeeUserIds: arrayUnion(userId),
       updatedAt: serverTimestamp()
     });
-    await addDoc(collection(db, 'eventAttendances'), {
+    const docRef = await addDoc(collection(db, 'eventAttendances'), {
       eventId,
       userId,
       userName,
@@ -160,6 +229,7 @@ export const registerForEvent = async (
       status: 'CONFIRMADO',
       timestamp: serverTimestamp()
     });
+    attendanceObj.id = docRef.id;
   } catch (err) {
     console.warn('Registrando asistencia localmente:', err);
   }
@@ -168,6 +238,107 @@ export const registerForEvent = async (
     success: true, 
     message: '¡Asistencia confirmada para ti y ' + selectedDogs.length + ' perrito(s)!' 
   };
+};
+
+export const updateEventAttendance = async (
+  eventId: string,
+  userId: string,
+  selectedDogs: DogAttendeeSummary[]
+): Promise<{ success: boolean; message: string }> => {
+  if (!selectedDogs || selectedDogs.length === 0) {
+    return { success: false, message: 'Debes seleccionar al menos un perrito acompañante.' };
+  }
+
+  const existing = localAttendances.find(a => a.eventId === eventId && a.userId === userId && a.status === 'CONFIRMADO');
+  const prevCount = existing ? existing.selectedDogs.length : 1;
+  const diff = selectedDogs.length - prevCount;
+
+  if (existing) {
+    existing.selectedDogs = selectedDogs;
+  }
+
+  const ev = localEvents.find(e => e.id === eventId);
+  if (ev) {
+    ev.dogsCount = Math.max(0, ev.dogsCount + diff);
+  }
+
+  try {
+    const q = query(
+      collection(db, 'eventAttendances'),
+      where('eventId', '==', eventId),
+      where('userId', '==', userId),
+      where('status', '==', 'CONFIRMADO')
+    );
+    const snap = await getDocs(q);
+    if (!snap.empty) {
+      const attDoc = snap.docs[0];
+      await updateDoc(attDoc.ref, {
+        selectedDogs,
+        updatedAt: serverTimestamp()
+      });
+    }
+
+    if (ev) {
+      await updateDoc(doc(db, 'events', eventId), {
+        dogsCount: ev.dogsCount,
+        updatedAt: serverTimestamp()
+      });
+    }
+  } catch (err) {
+    console.warn('Actualizando perritos de asistencia en Firestore:', err);
+  }
+
+  return { 
+    success: true, 
+    message: '¡Perritos acompañantes actualizados exitosamente (' + selectedDogs.length + ' perrito(s))!' 
+  };
+};
+
+export const cancelEventAttendance = async (
+  eventId: string,
+  userId: string
+): Promise<{ success: boolean; message: string }> => {
+  const existing = localAttendances.find(a => a.eventId === eventId && a.userId === userId && a.status === 'CONFIRMADO');
+  const dogsRemoved = existing ? existing.selectedDogs.length : 1;
+  if (existing) {
+    existing.status = 'CANCELADO';
+  }
+
+  const ev = localEvents.find(e => e.id === eventId);
+  if (ev) {
+    ev.tutorsCount = Math.max(0, ev.tutorsCount - 1);
+    ev.dogsCount = Math.max(0, ev.dogsCount - dogsRemoved);
+    if (ev.attendeeUserIds) {
+      ev.attendeeUserIds = ev.attendeeUserIds.filter(id => id !== userId);
+    }
+  }
+
+  try {
+    const q = query(
+      collection(db, 'eventAttendances'),
+      where('eventId', '==', eventId),
+      where('userId', '==', userId),
+      where('status', '==', 'CONFIRMADO')
+    );
+    const snap = await getDocs(q);
+    if (!snap.empty) {
+      await updateDoc(snap.docs[0].ref, {
+        status: 'CANCELADO',
+        cancelledAt: serverTimestamp()
+      });
+    }
+
+    await updateDoc(doc(db, 'events', eventId), {
+      tutorsCount: ev ? ev.tutorsCount : increment(-1),
+      dogsCount: ev ? ev.dogsCount : increment(-dogsRemoved),
+      attendeeUserIds: arrayRemove(userId),
+      updatedAt: serverTimestamp()
+    });
+  } catch (err) {
+    console.warn('Cancelando asistencia localmente:', err);
+  }
+
+  return { success: true, message: 'Has cancelado tu asistencia a la junta.' };
 };
 
 export const openGoogleMapsUrl = async (googleMapsUrl: string) => {
