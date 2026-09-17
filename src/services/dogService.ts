@@ -1,4 +1,4 @@
-﻿import { 
+import { 
   collection, 
   doc, 
   getDocs, 
@@ -166,4 +166,46 @@ export const deleteDogFromDb = async (dogId: string, ownerId: string): Promise<{
 
   localDogs = localDogs.filter(d => d.id !== dogId);
   return { success: true, message: 'El perrito ha sido desvinculado de tu cuenta.' };
+};
+
+/**
+ * Obtener todos los perritos de todas las comunidades
+ */
+export const getAllDogsFromDb = async (): Promise<Dog[]> => {
+  try {
+    const snap = await getDocs(collection(db, 'dogs'));
+    if (!snap.empty) {
+      const list: Dog[] = [];
+      snap.forEach(d => {
+        const data = d.data();
+        list.push({
+          id: d.id,
+          ownerId: data.ownerId,
+          name: data.name || 'Mi Perrito',
+          breed: data.breed || 'Mestizo',
+          isMixed: !!data.isMixed,
+          birthDate: data.birthDate?.toDate ? data.birthDate.toDate() : new Date(),
+          gender: data.gender || 'macho',
+          size: data.size || 'mediano',
+          description: data.description || '',
+          personalityTraits: data.personalityTraits || [],
+          photoUrls: data.photoUrls || [DEFAULT_DOG_PHOTOS[0]],
+          passport: data.passport || {
+            attendedEventsCount: 0,
+            badges: ['primer_registro'],
+            seniorityDate: new Date(),
+            communitiesCount: 1,
+            honorTitle: 'Perrito Explorador'
+          },
+          createdAt: data.createdAt?.toDate ? data.createdAt.toDate() : new Date(),
+          updatedAt: data.updatedAt?.toDate ? data.updatedAt.toDate() : new Date()
+        });
+      });
+      localDogs = list;
+      return list;
+    }
+  } catch (err) {
+    console.warn('Error leyendo perritos globales:', err);
+  }
+  return [...localDogs];
 };

@@ -14,7 +14,17 @@ import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Community } from '../models/Community';
 import { getCommunities, joinCommunity, submitCommunityRequest, createOfficialCommunity } from '../services/communityService';
-import { getCommunityPhotos, uploadCommunityPhoto, deleteCommunityPhoto, CommunityPhoto } from '../services/communityPhotoService';
+import { 
+  getCommunityPhotos, 
+  uploadCommunityPhoto, 
+  deleteCommunityPhoto, 
+  toggleLikeCommunityPhoto,
+  CommunityPhoto 
+} from '../services/communityPhotoService';
+import { Dog } from '../models/Dog';
+import { getAllDogsFromDb, DEFAULT_DOG_PHOTOS } from '../services/dogService';
+import { getEvents } from '../services/eventService';
+import { DogEvent } from '../models/Event';
 import { awardPaws } from '../services/gamificationService';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
@@ -60,6 +70,13 @@ export const CommunitiesScreen: React.FC = () => {
   const [reqInstagram, setReqInstagram] = useState('');
   const [reqComuna, setReqComuna] = useState('Las Condes');
   const [reqSize, setReqSize] = useState('50');
+
+  // Modal de Detalle de Comunidad (Perritos Asistentes y Fotos)
+  const [selectedCommunityDetail, setSelectedCommunityDetail] = useState<Community | null>(null);
+  const [showDetailModal, setShowDetailModal] = useState(false);
+  const [communityDetailTab, setCommunityDetailTab] = useState<'dogs' | 'photos' | 'events'>('dogs');
+  const [allGlobalDogs, setAllGlobalDogs] = useState<Dog[]>([]);
+  const [communityEvents, setCommunityEvents] = useState<DogEvent[]>([]);
 
   const [refreshing, setRefreshing] = useState(false);
 
@@ -226,6 +243,53 @@ export const CommunitiesScreen: React.FC = () => {
     }
   };
 
+  const handleToggleLike = async (photoId: string) => {
+    const res = await toggleLikeCommunityPhoto(photoId, currentUser.id);
+    if (res.success) {
+      setPhotos(prev => prev.map(p => {
+        if (p.id === photoId) {
+          const likedBy = p.likedBy || [];
+          const newLikedBy = res.liked 
+            ? [...likedBy, currentUser.id] 
+            : likedBy.filter(id => id !== currentUser.id);
+          return {
+            ...p,
+            likesCount: res.newLikesCount,
+            likedBy: newLikedBy
+          };
+        }
+        return p;
+      }));
+      showToast(res.message, res.liked ? 'success' : 'info');
+    }
+  };
+
+  const handleOpenCommunityDetail = async (comm: Community) => {
+    setSelectedCommunityDetail(comm);
+    setCommunityDetailTab('dogs');
+    setShowDetailModal(true);
+    try {
+      const [dogs, evList] = await Promise.all([
+        getAllDogsFromDb(),
+        getEvents(comm.id)
+      ]);
+      setAllGlobalDogs(dogs);
+      setCommunityEvents(evList);
+    } catch (e) {
+      console.warn('Error cargando detalles de comunidad:', e);
+    }
+  };
+
+  const handleOpenUploadModal = (comm?: Community) => {
+    if (comm) {
+      setSelectedCommunityDetail(comm);
+    }
+    if (currentDogs && currentDogs.length > 0 && !selectedDogName) {
+      setSelectedDogName(currentDogs[0].name);
+    }
+    setShowUploadModal(true);
+  };
+
   const filteredCommunities = communities.filter(c => 
     c.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
     c.comuna.toLowerCase().includes(searchQuery.toLowerCase())
@@ -297,7 +361,11 @@ export const CommunitiesScreen: React.FC = () => {
               const isSecondary = activeProfile.roleType === 'secondary_admin' && activeProfile.communityIdManaged === item.id;
 
               return (
-                <View style={[styles.communityCard, isPrimary && styles.primaryCardBorder, isSecondary && styles.secondaryCardBorder]}>
+                <TouchableOpacity 
+                  style={[styles.communityCard, isPrimary && styles.primaryCardBorder, isSecondary && styles.secondaryCardBorder]}
+                  onPress={() => handleOpenCommunityDetail(item)}
+                  activeOpacity={0.88}
+                >
                   <Image source={{ uri: item.logoUrl }} style={styles.commLogo} />
                   <View style={styles.commDetails}>
                     <View style={styles.commNameRow}>
@@ -327,12 +395,21 @@ export const CommunitiesScreen: React.FC = () => {
                       <Text style={styles.commStats}>
                         👥 {item.membersCount} miembros • 📅 {item.eventsCount} juntas
                       </Text>
-                      <TouchableOpacity 
-                        style={styles.joinButton} 
-                        onPress={() => handleJoin(item)}
-                      >
-                        <Text style={styles.joinButtonText}>Unirme (+10 🐾)</Text>
-                      </TouchableOpacity>
+                      <View style={{ flexDirection: 'row', gap: 6, alignItems: 'center' }}>
+                        <TouchableOpacity 
+                          style={styles.exploreBtn} 
+                          onPress={() => handleOpenCommunityDetail(item)}
+                        >
+                          <Ionicons name="eye" size={13} color="#0284C7" />
+                          <Text style={styles.exploreBtnText}>Ver</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity 
+                          style={styles.joinButton} 
+                          onPress={() => handleJoin(item)}
+                        >
+                          <Text style={styles.joinButtonText}>Unirme (+10 🐾)</Text>
+                        </TouchableOpacity>
+                      </View>
                     </View>
 
                     {isPrimary && (
@@ -348,7 +425,7 @@ export const CommunitiesScreen: React.FC = () => {
                       </TouchableOpacity>
                     )}
                   </View>
-                </View>
+                </TouchableOpacity>
               );
             }}
           />
@@ -412,10 +489,26 @@ export const CommunitiesScreen: React.FC = () => {
                     <Text style={styles.photoCaption}>{item.caption}</Text>
                     <View style={styles.photoFooter}>
                       <Text style={styles.photoCommunityTag}>📍 {item.communityName || 'Comunidad Oficial'}</Text>
-                      <View style={styles.photoLikesBadge}>
-                        <Ionicons name="heart" size={14} color="#EF4444" />
-                        <Text style={styles.photoLikesCount}>{item.likesCount}</Text>
-                      </View>
+                      <TouchableOpacity 
+                        style={[
+                          styles.photoLikesBadge,
+                          item.likedBy?.includes(currentUser.id) && styles.photoLikesBadgeActive
+                        ]}
+                        onPress={() => handleToggleLike(item.id)}
+                        activeOpacity={0.7}
+                      >
+                        <Ionicons 
+                          name={item.likedBy?.includes(currentUser.id) ? "heart" : "heart-outline"} 
+                          size={15} 
+                          color="#EF4444" 
+                        />
+                        <Text style={[
+                          styles.photoLikesCount,
+                          item.likedBy?.includes(currentUser.id) && styles.photoLikesCountActive
+                        ]}>
+                          {item.likesCount}
+                        </Text>
+                      </TouchableOpacity>
                     </View>
                   </View>
                 </View>
@@ -519,12 +612,44 @@ export const CommunitiesScreen: React.FC = () => {
             </Text>
 
             <Text style={styles.fieldLabel}>Perrito en la foto:</Text>
-            <TextInput
-              placeholder="Nombre de tu perrito (ej: Firulais)"
-              value={selectedDogName}
-              onChangeText={setSelectedDogName}
-              style={styles.modalInput}
-            />
+            {currentDogs && currentDogs.length > 0 ? (
+              <View style={{ marginBottom: 12 }}>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8, paddingVertical: 4 }}>
+                  {currentDogs.map(d => {
+                    const isSelected = selectedDogName === d.name;
+                    return (
+                      <TouchableOpacity
+                        key={d.id}
+                        style={[styles.dogSelectCard, isSelected && styles.dogSelectCardActive]}
+                        onPress={() => setSelectedDogName(d.name)}
+                        activeOpacity={0.8}
+                      >
+                        <Image 
+                          source={{ uri: d.photoUrls?.[0] || DEFAULT_DOG_PHOTOS[0] }} 
+                          style={styles.dogSelectAvatar} 
+                        />
+                        <View style={{ marginLeft: 8 }}>
+                          <Text style={[styles.dogSelectName, isSelected && styles.dogSelectNameActive]}>
+                            {d.name}
+                          </Text>
+                          <Text style={styles.dogSelectBreed}>{d.breed}</Text>
+                        </View>
+                        {isSelected && (
+                          <Ionicons name="checkmark-circle" size={18} color="#0284C7" style={{ marginLeft: 6 }} />
+                        )}
+                      </TouchableOpacity>
+                    );
+                  })}
+                </ScrollView>
+              </View>
+            ) : (
+              <TextInput
+                placeholder="Nombre de tu perrito (ej: Firulais)"
+                value={selectedDogName}
+                onChangeText={setSelectedDogName}
+                style={styles.modalInput}
+              />
+            )}
 
             <Text style={styles.fieldLabel}>Foto:</Text>
             <View style={styles.photoActionRow}>
@@ -569,6 +694,259 @@ export const CommunitiesScreen: React.FC = () => {
                 {uploading ? 'Subiendo foto...' : 'Publicar Foto (+15 🐾)'}
               </Text>
             </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Modal Detalle de la Comunidad (Perritos Asistentes, Fotos y Juntas) */}
+      <Modal visible={showDetailModal} transparent animationType="slide">
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalCard, { maxHeight: '90%', paddingBottom: 20 }]}>
+            {selectedCommunityDetail && (
+              <>
+                <View style={styles.modalHeader}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1, gap: 10 }}>
+                    <Image source={{ uri: selectedCommunityDetail.logoUrl }} style={styles.detailCommLogo} />
+                    <View style={{ flex: 1 }}>
+                      <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                        <Text style={styles.detailCommTitle} numberOfLines={1}>
+                          {selectedCommunityDetail.name}
+                        </Text>
+                        {selectedCommunityDetail.isVerified && (
+                          <Ionicons name="checkmark-circle" size={16} color="#0284C7" style={{ marginLeft: 4 }} />
+                        )}
+                      </View>
+                      <Text style={styles.detailCommLocation}>
+                        📍 {selectedCommunityDetail.comuna}, {selectedCommunityDetail.region}
+                      </Text>
+                    </View>
+                  </View>
+                  <TouchableOpacity onPress={() => setShowDetailModal(false)}>
+                    <Ionicons name="close" size={24} color="#64748B" />
+                  </TouchableOpacity>
+                </View>
+
+                {/* Subtabs del Detalle */}
+                <View style={styles.detailTabsRow}>
+                  <TouchableOpacity 
+                    style={[styles.detailTabBtn, communityDetailTab === 'dogs' && styles.detailTabBtnActive]}
+                    onPress={() => setCommunityDetailTab('dogs')}
+                  >
+                    <Ionicons name="paw" size={15} color={communityDetailTab === 'dogs' ? '#0284C7' : '#64748B'} />
+                    <Text style={[styles.detailTabBtnText, communityDetailTab === 'dogs' && styles.detailTabBtnTextActive]}>
+                      Perritos
+                    </Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity 
+                    style={[styles.detailTabBtn, communityDetailTab === 'photos' && styles.detailTabBtnActive]}
+                    onPress={() => setCommunityDetailTab('photos')}
+                  >
+                    <Ionicons name="images" size={15} color={communityDetailTab === 'photos' ? '#0284C7' : '#64748B'} />
+                    <Text style={[styles.detailTabBtnText, communityDetailTab === 'photos' && styles.detailTabBtnTextActive]}>
+                      Fotos ({photos.filter(p => p.communityId === selectedCommunityDetail.id || p.communityName?.toLowerCase().includes(selectedCommunityDetail.name.toLowerCase())).length})
+                    </Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity 
+                    style={[styles.detailTabBtn, communityDetailTab === 'events' && styles.detailTabBtnActive]}
+                    onPress={() => setCommunityDetailTab('events')}
+                  >
+                    <Ionicons name="calendar" size={15} color={communityDetailTab === 'events' ? '#0284C7' : '#64748B'} />
+                    <Text style={[styles.detailTabBtnText, communityDetailTab === 'events' && styles.detailTabBtnTextActive]}>
+                      Juntas ({communityEvents.length})
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+
+                {/* Contenido Pestaña 1: Perritos Asistentes y de la Comunidad */}
+                {communityDetailTab === 'dogs' && (
+                  <ScrollView style={styles.detailContentScroll} showsVerticalScrollIndicator={false}>
+                    <Text style={styles.detailSectionSub}>
+                      Perritos que participan y asisten a las juntas de esta comunidad:
+                    </Text>
+
+                    {(() => {
+                      const commLower = selectedCommunityDetail.name.toLowerCase();
+                      const breedMatches = allGlobalDogs.filter(d => 
+                        commLower.includes(d.breed.toLowerCase()) || 
+                        d.breed.toLowerCase().includes(commLower.split(' ')[0]) ||
+                        commLower.includes('chile') ||
+                        commLower.includes('providencia') ||
+                        commLower.includes('condes')
+                      );
+                      
+                      const dogsToShow = breedMatches.length > 0 ? breedMatches : (
+                        allGlobalDogs.length > 0 ? allGlobalDogs.slice(0, 5) : [
+                          {
+                            id: 'dog-comm-1',
+                            ownerId: 'user-1',
+                            name: 'Firulais',
+                            breed: selectedCommunityDetail.name.includes('Golden') ? 'Golden Retriever' : 'Mestizo',
+                            size: 'grande',
+                            gender: 'macho',
+                            photoUrls: ['https://images.unsplash.com/photo-1552053831-71594a27632d?w=300'],
+                            passport: { attendedEventsCount: 4, honorTitle: 'Líder de Manada' }
+                          },
+                          {
+                            id: 'dog-comm-2',
+                            ownerId: 'user-2',
+                            name: 'Thor',
+                            breed: selectedCommunityDetail.name.includes('Golden') ? 'Golden Retriever' : 'Pastor Alemán',
+                            size: 'grande',
+                            gender: 'macho',
+                            photoUrls: ['https://images.unsplash.com/photo-1543466835-00a7907e9de1?w=300'],
+                            passport: { attendedEventsCount: 2, honorTitle: 'Perrito Aventurero' }
+                          },
+                          {
+                            id: 'dog-comm-3',
+                            ownerId: 'user-3',
+                            name: 'Luna',
+                            breed: selectedCommunityDetail.name.includes('Golden') ? 'Golden Retriever' : 'Pug',
+                            size: 'mediano',
+                            gender: 'hembra',
+                            photoUrls: ['https://images.unsplash.com/photo-1583511655857-d19b40a7a54e?w=300'],
+                            passport: { attendedEventsCount: 3, honorTitle: 'Socializador Estrella' }
+                          }
+                        ]
+                      );
+
+                      return dogsToShow.map((d: any) => {
+                        const isMyDog = currentDogs.some(cd => cd.name.toLowerCase() === d.name.toLowerCase());
+                        return (
+                          <View key={d.id} style={styles.communityDogCard}>
+                            <Image 
+                              source={{ uri: d.photoUrls?.[0] || DEFAULT_DOG_PHOTOS[0] }} 
+                              style={styles.communityDogAvatar} 
+                            />
+                            <View style={{ flex: 1, marginLeft: 12 }}>
+                              <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                                <Text style={styles.communityDogName}>{d.name}</Text>
+                                {isMyDog && (
+                                  <View style={styles.myDogBadge}>
+                                    <Text style={styles.myDogBadgeText}>Tu Perrito</Text>
+                                  </View>
+                                )}
+                              </View>
+                              <Text style={styles.communityDogBreed}>
+                                {d.breed} • {d.gender || 'macho'}
+                              </Text>
+                              <View style={styles.communityDogStatsRow}>
+                                <View style={styles.miniPawBadge}>
+                                  <Ionicons name="paw" size={12} color="#D97706" />
+                                  <Text style={styles.miniPawText}>
+                                    {d.passport?.attendedEventsCount || 1} juntas asistidas
+                                  </Text>
+                                </View>
+                                {d.passport?.honorTitle && (
+                                  <Text style={styles.communityDogTitleText}>
+                                    🏅 {d.passport.honorTitle}
+                                  </Text>
+                                )}
+                              </View>
+                            </View>
+                          </View>
+                        );
+                      });
+                    })()}
+                  </ScrollView>
+                )}
+
+                {/* Contenido Pestaña 2: Fotos Comunitarias */}
+                {communityDetailTab === 'photos' && (
+                  <ScrollView style={styles.detailContentScroll} showsVerticalScrollIndicator={false}>
+                    <TouchableOpacity 
+                      style={[styles.uploadPhotoBtn, { marginVertical: 8 }]}
+                      onPress={() => {
+                        handleOpenUploadModal(selectedCommunityDetail);
+                      }}
+                    >
+                      <Ionicons name="camera" size={16} color="#FFFFFF" />
+                      <Text style={styles.uploadPhotoBtnText}>+ Compartir Foto en esta Comunidad (+15 🐾)</Text>
+                    </TouchableOpacity>
+
+                    {(() => {
+                      const commPhotos = photos.filter(p => 
+                        p.communityId === selectedCommunityDetail.id || 
+                        p.communityName?.toLowerCase().includes(selectedCommunityDetail.name.toLowerCase())
+                      );
+
+                      if (commPhotos.length === 0) {
+                        return (
+                          <View style={styles.emptyCard}>
+                            <Ionicons name="images-outline" size={36} color="#94A3B8" />
+                            <Text style={styles.emptyText}>Aún no hay fotos en esta comunidad.</Text>
+                            <Text style={[styles.emptyText, { fontSize: 12, marginTop: 4 }]}>
+                              ¡Toca el botón arriba para ser el primero en compartir un momento!
+                            </Text>
+                          </View>
+                        );
+                      }
+
+                      return commPhotos.map(item => {
+                        const isLiked = item.likedBy?.includes(currentUser.id);
+                        return (
+                          <View key={item.id} style={styles.photoCard}>
+                            <View style={styles.photoCardHeader}>
+                              <Image 
+                                source={{ uri: item.uploaderAvatar || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=100' }} 
+                                style={styles.photoAuthorAvatar} 
+                              />
+                              <View style={{ flex: 1, marginLeft: 10 }}>
+                                <Text style={styles.photoAuthorName}>{item.uploaderName}</Text>
+                                <Text style={styles.photoDogTag}>🐾 Con {item.dogName || 'su perrito'}</Text>
+                              </View>
+                            </View>
+                            <Image source={{ uri: item.photoUrl }} style={styles.photoImage} />
+                            <View style={styles.photoCardBody}>
+                              <Text style={styles.photoCaption}>{item.caption}</Text>
+                              <View style={styles.photoFooter}>
+                                <Text style={styles.photoCommunityTag}>📍 {item.communityName}</Text>
+                                <TouchableOpacity 
+                                  style={[styles.photoLikesBadge, isLiked && styles.photoLikesBadgeActive]}
+                                  onPress={() => handleToggleLike(item.id)}
+                                  activeOpacity={0.7}
+                                >
+                                  <Ionicons 
+                                    name={isLiked ? "heart" : "heart-outline"} 
+                                    size={15} 
+                                    color="#EF4444" 
+                                  />
+                                  <Text style={[styles.photoLikesCount, isLiked && styles.photoLikesCountActive]}>
+                                    {item.likesCount}
+                                  </Text>
+                                </TouchableOpacity>
+                              </View>
+                            </View>
+                          </View>
+                        );
+                      });
+                    })()}
+                  </ScrollView>
+                )}
+
+                {/* Contenido Pestaña 3: Juntas de la Comunidad */}
+                {communityDetailTab === 'events' && (
+                  <ScrollView style={styles.detailContentScroll} showsVerticalScrollIndicator={false}>
+                    {communityEvents.length === 0 ? (
+                      <View style={styles.emptyCard}>
+                        <Ionicons name="calendar-outline" size={36} color="#94A3B8" />
+                        <Text style={styles.emptyText}>No hay juntas programadas actualmente para esta comunidad.</Text>
+                      </View>
+                    ) : (
+                      communityEvents.map(ev => (
+                        <View key={ev.id} style={styles.commEventCard}>
+                          <Text style={styles.commEventTitle}>{ev.title}</Text>
+                          <Text style={styles.commEventMeta}>📍 {ev.location.placeName}, {ev.location.comuna}</Text>
+                          <Text style={styles.commEventMeta}>👥 {ev.tutorsCount} tutores • 🐾 {ev.dogsCount} perritos</Text>
+                          <Text style={styles.commEventDesc}>{ev.description}</Text>
+                        </View>
+                      ))
+                    )}
+                  </ScrollView>
+                )}
+              </>
+            )}
           </View>
         </View>
       </Modal>
@@ -1242,5 +1620,199 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontWeight: '800',
     color: '#B45309',
+  },
+  exploreBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#F0F9FF',
+    borderWidth: 1,
+    borderColor: '#BAE6FD',
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    borderRadius: 10,
+  },
+  exploreBtnText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#0284C7',
+  },
+  photoLikesBadgeActive: {
+    backgroundColor: '#FEE2E2',
+    borderColor: '#FECACA',
+  },
+  photoLikesCountActive: {
+    color: '#DC2626',
+    fontWeight: '800',
+  },
+  dogSelectCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 8,
+    paddingRight: 12,
+    borderRadius: 12,
+    borderWidth: 1.5,
+    borderColor: '#E2E8F0',
+    backgroundColor: '#F8FAFC',
+    minWidth: 160,
+  },
+  dogSelectCardActive: {
+    borderColor: '#0284C7',
+    backgroundColor: '#F0F9FF',
+  },
+  dogSelectAvatar: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#E2E8F0',
+  },
+  dogSelectName: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#1E293B',
+  },
+  dogSelectNameActive: {
+    color: '#0284C7',
+  },
+  dogSelectBreed: {
+    fontSize: 11,
+    color: '#64748B',
+  },
+  detailCommLogo: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: '#E2E8F0',
+  },
+  detailCommTitle: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: '#0F172A',
+  },
+  detailCommLocation: {
+    fontSize: 12,
+    color: '#64748B',
+    marginTop: 2,
+  },
+  detailTabsRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginVertical: 12,
+  },
+  detailTabBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 8,
+    borderRadius: 10,
+    backgroundColor: '#F1F5F9',
+  },
+  detailTabBtnActive: {
+    backgroundColor: '#E0F2FE',
+  },
+  detailTabBtnText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#64748B',
+  },
+  detailTabBtnTextActive: {
+    color: '#0284C7',
+    fontWeight: '800',
+  },
+  detailContentScroll: {
+    maxHeight: 420,
+  },
+  detailSectionSub: {
+    fontSize: 12,
+    color: '#64748B',
+    marginBottom: 10,
+  },
+  communityDogCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 12,
+    borderRadius: 14,
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    marginBottom: 10,
+  },
+  communityDogAvatar: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: '#E2E8F0',
+  },
+  communityDogName: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: '#0F172A',
+  },
+  communityDogBreed: {
+    fontSize: 12,
+    color: '#64748B',
+    marginTop: 1,
+  },
+  communityDogStatsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginTop: 4,
+  },
+  miniPawBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#FEF3C7',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
+  },
+  miniPawText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#B45309',
+  },
+  communityDogTitleText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#0284C7',
+  },
+  myDogBadge: {
+    backgroundColor: '#DCFCE7',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
+    marginLeft: 6,
+  },
+  myDogBadgeText: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#15803D',
+  },
+  commEventCard: {
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: 8,
+  },
+  commEventTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#0F172A',
+  },
+  commEventMeta: {
+    fontSize: 11,
+    color: '#64748B',
+    marginTop: 2,
+  },
+  commEventDesc: {
+    fontSize: 12,
+    color: '#334155',
+    marginTop: 4,
   },
 });

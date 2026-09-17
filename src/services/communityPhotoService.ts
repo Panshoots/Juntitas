@@ -1,4 +1,4 @@
-﻿import { 
+import { 
   collection, 
   doc, 
   getDocs, 
@@ -169,4 +169,51 @@ export const deleteCommunityPhoto = async (
   );
 
   return { success: true, message: 'Foto eliminada de la galería comunitaria.' };
+};
+
+/**
+ * Dar o quitar like a una foto comunitaria (1 like por usuario)
+ */
+export const toggleLikeCommunityPhoto = async (
+  photoId: string, 
+  userId: string
+): Promise<{ success: boolean; liked: boolean; newLikesCount: number; message: string }> => {
+  const photo = localPhotos.find(p => p.id === photoId);
+  const likedBy = photo?.likedBy || [];
+  const alreadyLiked = likedBy.includes(userId);
+
+  let newLikedBy: string[];
+  let newLikesCount: number;
+
+  if (alreadyLiked) {
+    // Quitar like
+    newLikedBy = likedBy.filter(id => id !== userId);
+    newLikesCount = Math.max(0, (photo?.likesCount || 1) - 1);
+  } else {
+    // Dar like
+    newLikedBy = [...likedBy, userId];
+    newLikesCount = (photo?.likesCount || 0) + 1;
+  }
+
+  if (photo) {
+    photo.likedBy = newLikedBy;
+    photo.likesCount = newLikesCount;
+  }
+
+  try {
+    const photoRef = doc(db, 'communityPhotos', photoId);
+    await updateDoc(photoRef, {
+      likedBy: newLikedBy,
+      likesCount: newLikesCount
+    });
+  } catch (err) {
+    console.warn('Actualizando like en Firestore:', err);
+  }
+
+  return {
+    success: true,
+    liked: !alreadyLiked,
+    newLikesCount,
+    message: alreadyLiked ? 'Like removido' : '¡Te gusta esta foto! ❤️'
+  };
 };
