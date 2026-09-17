@@ -15,6 +15,17 @@ import { Business } from '../models/Business';
 import { logAuditAction } from './auditService';
 import { SUPER_ADMIN_USER } from '../context/AuthContext';
 
+// Helper para eliminar cualquier propiedad con valor undefined antes de enviar a Firestore
+export const cleanUndefined = <T extends Record<string, any>>(obj: T): Partial<T> => {
+  const result: any = {};
+  for (const [key, value] of Object.entries(obj)) {
+    if (value !== undefined) {
+      result[key] = value;
+    }
+  }
+  return result;
+};
+
 // Nombres y razas realistas para la generación aleatoria
 const DOG_NAMES = ['Simba', 'Luna', 'Thor', 'Bella', 'Toby', 'Coco', 'Milo', 'Max', 'Kira', 'Rocky', 'Nina', 'Zeus', 'Sasha', 'Bruno', 'Maya'];
 const DOG_BREEDS = [
@@ -71,10 +82,10 @@ export const resetEntireApp = async (
     }
 
     // Asegurar que Francisco Juillet persista
-    await setDoc(doc(db, 'users', 'user-superadmin'), {
+    await setDoc(doc(db, 'users', 'user-superadmin'), cleanUndefined({
       ...SUPER_ADMIN_USER,
       updatedAt: serverTimestamp()
-    });
+    }));
 
     await logAuditAction(
       adminUserId,
@@ -166,11 +177,11 @@ export const seedRealisticData = async (
     ];
 
     for (const comm of communitiesToCreate) {
-      await setDoc(doc(db, 'communities', comm.id), {
+      await setDoc(doc(db, 'communities', comm.id), cleanUndefined({
         ...comm,
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp()
-      });
+      }));
     }
 
     // 2. Crear 10 Usuarios (3 Admins de comunidad, 1 Dueño de tienda, 6 Tutores)
@@ -190,30 +201,29 @@ export const seedRealisticData = async (
     let totalDogsCreated = 0;
 
     for (const u of rawUsersData) {
-      const userDoc: AppUser = {
+      const userDoc: any = {
         id: u.id,
         displayName: u.name,
         email: u.email,
         photoURL: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=300',
         roleType: u.role,
         filterProfileType: u.role === 'business_owner' ? 'business' : u.role === 'primary_admin' ? 'community_admin' : 'tutor',
-        requestedCommunityName: (u as any).commName,
-        requestedBusinessName: (u as any).bizName,
         location: { region: 'Metropolitana', comuna: u.comuna },
         contact: { phone: '+56 9 ' + Math.floor(10000000 + Math.random() * 90000000), isPublic: true },
         privacy: { showDogsPublicly: true, showCommunitiesPublicly: true, showAttendancePublicly: true },
         pawBalance: 150,
         isSuperAdmin: false,
         status: 'ACTIVO',
-        createdAt: new Date(),
-        updatedAt: new Date()
       };
 
-      await setDoc(doc(db, 'users', u.id), {
+      if ((u as any).commName) userDoc.requestedCommunityName = (u as any).commName;
+      if ((u as any).bizName) userDoc.requestedBusinessName = (u as any).bizName;
+
+      await setDoc(doc(db, 'users', u.id), cleanUndefined({
         ...userDoc,
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp()
-      });
+      }));
 
       // Generar entre 1 y 3 perros aleatorios para este usuario
       const dogCount = Math.floor(Math.random() * 3) + 1; // 1, 2 o 3 perros
@@ -245,10 +255,10 @@ export const seedRealisticData = async (
           createdAt: new Date()
         };
 
-        await setDoc(doc(db, 'dogs', dogId), {
+        await setDoc(doc(db, 'dogs', dogId), cleanUndefined({
           ...dogDoc,
           createdAt: serverTimestamp()
-        });
+        }));
 
         totalDogsCreated++;
       }
@@ -319,10 +329,10 @@ export const seedRealisticData = async (
     ];
 
     for (const biz of businessesToCreate) {
-      await setDoc(doc(db, 'businesses', biz.id), {
+      await setDoc(doc(db, 'businesses', biz.id), cleanUndefined({
         ...biz,
         createdAt: serverTimestamp()
-      });
+      }));
     }
 
     // 4. Crear 2 Juntas Oficiales
@@ -357,6 +367,7 @@ export const seedRealisticData = async (
         id: 'event-junta-chatos-busta',
         communityId: 'comm-pugs-santiago',
         communityName: 'Club Pugs Santiago',
+        communityLogoUrl: 'https://images.unsplash.com/photo-1517849845537-4d257902454a?w=200',
         title: 'Encuentro de Chatos & Amigos',
         description: 'Paseo tranquilo a la sombra con puntos de agua fresca para evitar golpes de calor.',
         startDate: new Date(Date.now() + 86400000 * 8),
@@ -381,10 +392,10 @@ export const seedRealisticData = async (
     ];
 
     for (const ev of eventsToCreate) {
-      await setDoc(doc(db, 'events', ev.id), {
+      await setDoc(doc(db, 'events', ev.id), cleanUndefined({
         ...ev,
         createdAt: serverTimestamp()
-      });
+      }));
     }
 
     await logAuditAction(

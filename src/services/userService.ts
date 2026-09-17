@@ -13,6 +13,17 @@ import { db } from '../firebase/config';
 import { AppUser, UserStatus, UserRole } from '../models/User';
 import { logAuditAction } from './auditService';
 
+// Helper para eliminar cualquier propiedad con valor undefined antes de enviar a Firestore
+export const cleanUndefined = <T extends Record<string, any>>(obj: T): Partial<T> => {
+  const result: any = {};
+  for (const [key, value] of Object.entries(obj)) {
+    if (value !== undefined) {
+      result[key] = value;
+    }
+  }
+  return result;
+};
+
 // Almacén en memoria sincronizado con Firestore
 let localUsers: AppUser[] = [];
 
@@ -57,11 +68,11 @@ export const getUsersFromDb = async (): Promise<AppUser[]> => {
 export const createUserInDb = async (user: AppUser): Promise<{ success: boolean; message: string }> => {
   try {
     const userDocRef = doc(db, 'users', user.id);
-    await setDoc(userDocRef, {
+    await setDoc(userDocRef, cleanUndefined({
       ...user,
       createdAt: serverTimestamp(),
       updatedAt: serverTimestamp()
-    });
+    }));
   } catch (err) {
     console.warn('No se pudo guardar directo en Firestore, guardando en caché local:', err);
   }
