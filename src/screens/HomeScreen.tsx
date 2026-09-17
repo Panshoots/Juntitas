@@ -5,7 +5,8 @@ import {
   StyleSheet, 
   ScrollView, 
   TouchableOpacity, 
-  Image 
+  Image,
+  Modal 
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -15,6 +16,7 @@ import {
   getRemainingCooldown, 
   formatCooldown 
 } from '../services/gamificationService';
+import { checkAndClaimDailyStreak, DailyStreakResult } from '../services/streakService';
 import { SurprisePawModal } from '../components/SurprisePawModal';
 import { SurprisePawReward } from '../models/Gamification';
 import { useAuth } from '../context/AuthContext';
@@ -22,12 +24,31 @@ import { useAuth } from '../context/AuthContext';
 export const HomeScreen: React.FC = () => {
   const navigation = useNavigation<any>();
   const insets = useSafeAreaInsets();
-  const { currentUser, isSuperAdmin } = useAuth();
+  const { currentUser, currentDogs, isSuperAdmin } = useAuth();
 
   const [pawBalance, setPawBalance] = useState(currentUser.pawBalance || 100);
   const [surpriseReward, setSurpriseReward] = useState<SurprisePawReward | null>(null);
   const [cooldownRemaining, setCooldownRemaining] = useState<number>(0);
   const [showSurpriseModal, setShowSurpriseModal] = useState(false);
+
+  // Racha Diaria (Daily Streak)
+  const [streakReward, setStreakReward] = useState<DailyStreakResult | null>(null);
+  const [showStreakModal, setShowStreakModal] = useState(false);
+
+  // Reclamar racha diaria al iniciar sesión o abrir HomeScreen
+  useEffect(() => {
+    const claimStreak = async () => {
+      if (currentUser?.id) {
+        const result = await checkAndClaimDailyStreak(currentUser.id);
+        if (result.success && !result.alreadyClaimed && result.pawsAwarded > 0) {
+          setStreakReward(result);
+          setShowStreakModal(true);
+          setPawBalance(prev => prev + result.pawsAwarded);
+        }
+      }
+    };
+    claimStreak();
+  }, [currentUser?.id]);
 
   // Comprobar cooldown cada segundo
   useEffect(() => {
@@ -89,9 +110,9 @@ export const HomeScreen: React.FC = () => {
             <View style={styles.adminShieldCircle}>
               <Ionicons name="shield-checkmark" size={20} color="#EF4444" />
             </View>
-            <View>
-              <Text style={styles.adminBannerTitle}>Super Admin: Francisco Juillet</Text>
-              <Text style={styles.adminBannerSubtitle}>Toca aquí para abrir el Panel CRM Global</Text>
+            <View style={{ flex: 1, paddingRight: 6 }}>
+              <Text style={styles.adminBannerTitle} numberOfLines={1}>Super Admin: Francisco Juillet</Text>
+              <Text style={styles.adminBannerSubtitle} numberOfLines={1}>Toca aquí para abrir el Panel CRM Global</Text>
             </View>
           </View>
           <View style={styles.adminOpenButton}>
@@ -102,30 +123,57 @@ export const HomeScreen: React.FC = () => {
       )}
 
       {/* Banner Principal / Pasaporte Perruno */}
-      <TouchableOpacity 
-        style={styles.passportBanner}
-        onPress={() => navigation.navigate('DogPassport', {})}
-        activeOpacity={0.9}
-      >
-        <View style={styles.passportBannerContent}>
-          <View style={styles.passportHeaderTag}>
-            <Ionicons name="sparkles" size={14} color="#F59E0B" />
-            <Text style={styles.passportTagText}>PASAPORTE OFICIAL</Text>
+      {currentDogs && currentDogs.length > 0 ? (
+        <TouchableOpacity 
+          style={styles.passportBanner}
+          onPress={() => navigation.navigate('DogPassport', { dog: currentDogs[0] })}
+          activeOpacity={0.9}
+        >
+          <View style={styles.passportBannerContent}>
+            <View style={styles.passportHeaderTag}>
+              <Ionicons name="sparkles" size={14} color="#F59E0B" />
+              <Text style={styles.passportTagText}>PASAPORTE OFICIAL</Text>
+            </View>
+            <Text style={styles.passportBannerTitle}>Pasaporte de {currentDogs[0].name}</Text>
+            <Text style={styles.passportBannerSubtitle}>
+              {currentDogs[0].breed} • {currentDogs[0].passport?.attendedEventsCount || 0} Juntas • {currentDogs[0].passport?.badges?.length || 1} Medallas
+            </Text>
+            <View style={styles.viewPassportButton}>
+              <Text style={styles.viewPassportText}>Abrir Carnet</Text>
+              <Ionicons name="arrow-forward" size={14} color="#0284C7" />
+            </View>
           </View>
-          <Text style={styles.passportBannerTitle}>Pasaporte de Firulais</Text>
-          <Text style={styles.passportBannerSubtitle}>
-            Golden Retriever • 5 Juntas • 3 Medallas
-          </Text>
-          <View style={styles.viewPassportButton}>
-            <Text style={styles.viewPassportText}>Abrir Carnet</Text>
-            <Ionicons name="arrow-forward" size={14} color="#0284C7" />
+          <Image 
+            source={{ uri: currentDogs[0].photoUrls?.[0] || 'https://images.unsplash.com/photo-1552053831-71594a27632d?w=300' }} 
+            style={styles.bannerDogAvatar}
+          />
+        </TouchableOpacity>
+      ) : (
+        <TouchableOpacity 
+          style={[styles.passportBanner, { backgroundColor: '#0369A1' }]}
+          onPress={() => navigation.navigate('Profile')}
+          activeOpacity={0.9}
+        >
+          <View style={styles.passportBannerContent}>
+            <View style={[styles.passportHeaderTag, { backgroundColor: '#FEF3C7' }]}>
+              <Ionicons name="paw" size={14} color="#D97706" />
+              <Text style={[styles.passportTagText, { color: '#B45309' }]}>NUEVO PASAPORTE</Text>
+            </View>
+            <Text style={styles.passportBannerTitle}>+ Registra a tu Perrito</Text>
+            <Text style={styles.passportBannerSubtitle}>
+              Crea su carnet oficial y gana +50 Huellitas de bienvenida
+            </Text>
+            <View style={styles.viewPassportButton}>
+              <Text style={styles.viewPassportText}>Registrar Ahora</Text>
+              <Ionicons name="add-circle" size={14} color="#0284C7" />
+            </View>
           </View>
-        </View>
-        <Image 
-          source={{ uri: 'https://images.unsplash.com/photo-1552053831-71594a27632d?w=300' }} 
-          style={styles.bannerDogAvatar}
-        />
-      </TouchableOpacity>
+          <Image 
+            source={{ uri: 'https://images.unsplash.com/photo-1543466835-00a7907e9de1?w=300' }} 
+            style={styles.bannerDogAvatar}
+          />
+        </TouchableOpacity>
+      )}
 
       {/* Acciones Rápidas del Plan Maestro */}
       <Text style={styles.sectionHeader}>Explora Juntitas</Text>
@@ -229,6 +277,34 @@ export const HomeScreen: React.FC = () => {
         cooldownMs={cooldownRemaining}
         onClose={handleClaimReward}
       />
+
+      {/* Modal de Racha Diaria (Daily Streak Reward) */}
+      <Modal visible={showStreakModal} transparent animationType="fade">
+        <View style={styles.modalOverlay}>
+          <View style={styles.streakModalCard}>
+            <View style={styles.streakIconCircle}>
+              <Text style={{ fontSize: 38 }}>🔥</Text>
+            </View>
+            <Text style={styles.streakTitle}>¡Racha Diaria Activa!</Text>
+            <View style={styles.streakBadge}>
+              <Text style={styles.streakBadgeText}>DÍA {streakReward?.streak} CONSECUTIVO</Text>
+            </View>
+            <Text style={styles.streakPawsAmount}>+{streakReward?.pawsAwarded} 🐾 Huellitas</Text>
+            <Text style={styles.streakMessage}>
+              {streakReward?.message}
+            </Text>
+            <Text style={styles.streakNextNote}>
+              ¡Sigue ingresando a diario! Cada día consecutivo acumularás más Huellitas para canjear en la Tienda.
+            </Text>
+            <TouchableOpacity 
+              style={styles.streakClaimBtn}
+              onPress={() => setShowStreakModal(false)}
+            >
+              <Text style={styles.streakClaimBtnText}>¡Genial, gracias! 🐾</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </ScrollView>
   );
 };
@@ -510,6 +586,86 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '700',
     color: '#DC2626',
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 24,
+  },
+  streakModalCard: {
+    width: '100%',
+    maxWidth: 340,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 24,
+    padding: 24,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.15,
+    shadowRadius: 16,
+    elevation: 8,
+  },
+  streakIconCircle: {
+    width: 70,
+    height: 70,
+    borderRadius: 35,
+    backgroundColor: '#FEF2F2',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 12,
+  },
+  streakTitle: {
+    fontSize: 20,
+    fontWeight: '900',
+    color: '#0F172A',
+    marginBottom: 6,
+  },
+  streakBadge: {
+    backgroundColor: '#FEE2E2',
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+    borderRadius: 12,
+    marginBottom: 12,
+  },
+  streakBadgeText: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: '#DC2626',
+    letterSpacing: 1,
+  },
+  streakPawsAmount: {
+    fontSize: 22,
+    fontWeight: '900',
+    color: '#D97706',
+    marginBottom: 8,
+  },
+  streakMessage: {
+    fontSize: 13,
+    color: '#475569',
+    textAlign: 'center',
+    lineHeight: 18,
+    marginBottom: 8,
+  },
+  streakNextNote: {
+    fontSize: 11,
+    color: '#94A3B8',
+    textAlign: 'center',
+    lineHeight: 15,
+    marginBottom: 18,
+  },
+  streakClaimBtn: {
+    backgroundColor: '#0284C7',
+    width: '100%',
+    paddingVertical: 14,
+    borderRadius: 14,
+    alignItems: 'center',
+  },
+  streakClaimBtnText: {
+    color: '#FFFFFF',
+    fontWeight: '800',
+    fontSize: 15,
   },
 });
 

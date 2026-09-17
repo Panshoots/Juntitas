@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+﻿import React, { useEffect, useState } from 'react';
 import { 
   View, 
   Text, 
@@ -14,19 +14,34 @@ import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Community } from '../models/Community';
 import { getCommunities, joinCommunity, submitCommunityRequest, createOfficialCommunity } from '../services/communityService';
+import { getCommunityPhotos, uploadCommunityPhoto, deleteCommunityPhoto, CommunityPhoto } from '../services/communityPhotoService';
 import { awardPaws } from '../services/gamificationService';
 import { useAuth } from '../context/AuthContext';
 
 export const CommunitiesScreen: React.FC = () => {
   const insets = useSafeAreaInsets();
-  const { currentUser, activeProfile, isPrimaryAdminOf, isSuperAdmin } = useAuth();
+  const { currentUser, currentDogs, activeProfile, isPrimaryAdminOf, isSuperAdmin } = useAuth();
+  
+  // Pestaña activa: Comunidades o Álbum de Fotos
+  const [activeTab, setActiveTab] = useState<'communities' | 'photos'>('communities');
+
   const [communities, setCommunities] = useState<Community[]>([]);
+  const [photos, setPhotos] = useState<CommunityPhoto[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
 
+  // Modales
   const [showRequestModal, setShowRequestModal] = useState(false);
   const [showAdminModal, setShowAdminModal] = useState(false);
   const [selectedAdminComm, setSelectedAdminComm] = useState<Community | null>(null);
 
+  // Modal para subir fotos a la comunidad
+  const [showUploadModal, setShowUploadModal] = useState(false);
+  const [photoCaption, setPhotoCaption] = useState('');
+  const [photoUrl, setPhotoUrl] = useState('');
+  const [selectedDogName, setSelectedDogName] = useState('');
+  const [uploading, setUploading] = useState(false);
+
+  // Campos para solicitud / creación directa de comunidad
   const [reqName, setReqName] = useState('');
   const [reqDesc, setReqDesc] = useState('');
   const [reqInstagram, setReqInstagram] = useState('');
@@ -35,11 +50,17 @@ export const CommunitiesScreen: React.FC = () => {
 
   useEffect(() => {
     loadCommunities();
+    loadPhotos();
   }, []);
 
   const loadCommunities = async () => {
     const data = await getCommunities();
     setCommunities(data);
+  };
+
+  const loadPhotos = async () => {
+    const data = await getCommunityPhotos();
+    setPhotos(data);
   };
 
   const handleJoin = async (community: Community) => {
@@ -112,6 +133,47 @@ export const CommunitiesScreen: React.FC = () => {
     }
   };
 
+  const handleUploadPhoto = async () => {
+    if (!photoCaption.trim()) {
+      alert('Por favor escribe un pie de foto o descripción.');
+      return;
+    }
+
+    const finalUrl = photoUrl.trim() || 'https://images.unsplash.com/photo-1548199973-03cce0bbc87b?w=800';
+
+    setUploading(true);
+    const res = await uploadCommunityPhoto({
+      communityId: 'general',
+      communityName: 'Comunidad Oficial Juntitas',
+      uploaderId: currentUser.id,
+      uploaderName: currentUser.displayName,
+      uploaderAvatar: currentUser.photoURL || undefined,
+      dogName: selectedDogName || (currentDogs[0]?.name) || 'Mi Perrito',
+      photoUrl: finalUrl,
+      caption: photoCaption
+    });
+    setUploading(false);
+
+    alert(res.message);
+    if (res.success) {
+      setShowUploadModal(false);
+      setPhotoCaption('');
+      setPhotoUrl('');
+      loadPhotos();
+    }
+  };
+
+  const handleDeletePhoto = async (photoId: string) => {
+    const confirmDelete = confirm('¿Estás seguro de que deseas eliminar esta foto de la galería comunitaria?');
+    if (!confirmDelete) return;
+
+    const res = await deleteCommunityPhoto(photoId, currentUser.id);
+    alert(res.message);
+    if (res.success) {
+      loadPhotos();
+    }
+  };
+
   const filteredCommunities = communities.filter(c => 
     c.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
     c.comuna.toLowerCase().includes(searchQuery.toLowerCase())
@@ -119,8 +181,9 @@ export const CommunitiesScreen: React.FC = () => {
 
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
+      {/* Cabecera */}
       <View style={styles.header}>
-        <View>
+        <View style={{ flex: 1, paddingRight: 10 }}>
           <Text style={styles.title}>🐾 Comunidades Caninas</Text>
           <Text style={styles.subtitle}>Encuentra el grupo ideal para tu perrito</Text>
         </View>
@@ -133,84 +196,178 @@ export const CommunitiesScreen: React.FC = () => {
         </TouchableOpacity>
       </View>
 
-      <View style={styles.searchBar}>
-        <Ionicons name="search" size={20} color="#94A3B8" />
-        <TextInput
-          placeholder="Buscar por nombre o comuna..."
-          placeholderTextColor="#94A3B8"
-          value={searchQuery}
-          onChangeText={setSearchQuery}
-          style={styles.searchInput}
-        />
+      {/* Selector de Pestañas: Comunidades vs Álbum de Fotos */}
+      <View style={styles.subTabContainer}>
+        <TouchableOpacity 
+          style={[styles.subTabButton, activeTab === 'communities' && styles.subTabButtonActive]}
+          onPress={() => setActiveTab('communities')}
+        >
+          <Ionicons name="people" size={16} color={activeTab === 'communities' ? '#0284C7' : '#64748B'} />
+          <Text style={[styles.subTabText, activeTab === 'communities' && styles.subTabTextActive]}>
+            Comunidades ({communities.length})
+          </Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity 
+          style={[styles.subTabButton, activeTab === 'photos' && styles.subTabButtonActive]}
+          onPress={() => setActiveTab('photos')}
+        >
+          <Ionicons name="images" size={16} color={activeTab === 'photos' ? '#0284C7' : '#64748B'} />
+          <Text style={[styles.subTabText, activeTab === 'photos' && styles.subTabTextActive]}>
+            Álbum & Fotos ({photos.length})
+          </Text>
+        </TouchableOpacity>
       </View>
 
-      <FlatList
-        data={filteredCommunities}
-        keyExtractor={item => item.id}
-        contentContainerStyle={styles.listContent}
-        renderItem={({ item }) => {
-          const isPrimary = activeProfile.roleType === 'primary_admin' && activeProfile.communityIdManaged === item.id;
-          const isSecondary = activeProfile.roleType === 'secondary_admin' && activeProfile.communityIdManaged === item.id;
+      {/* Vista de Comunidades */}
+      {activeTab === 'communities' && (
+        <>
+          <View style={styles.searchBar}>
+            <Ionicons name="search" size={20} color="#94A3B8" />
+            <TextInput
+              placeholder="Buscar por nombre o comuna..."
+              placeholderTextColor="#94A3B8"
+              value={searchQuery}
+              onChangeText={setSearchQuery}
+              style={styles.searchInput}
+            />
+          </View>
 
-          return (
-            <View style={[styles.communityCard, isPrimary && styles.primaryCardBorder, isSecondary && styles.secondaryCardBorder]}>
-              <Image source={{ uri: item.logoUrl }} style={styles.commLogo} />
-              <View style={styles.commDetails}>
-                <View style={styles.commNameRow}>
-                  <Text style={styles.commName}>{item.name}</Text>
-                  {item.isVerified && (
-                    <Ionicons name="checkmark-circle" size={18} color="#0284C7" style={{ marginLeft: 4 }} />
-                  )}
-                </View>
+          <FlatList
+            data={filteredCommunities}
+            keyExtractor={item => item.id}
+            contentContainerStyle={styles.listContent}
+            renderItem={({ item }) => {
+              const isPrimary = activeProfile.roleType === 'primary_admin' && activeProfile.communityIdManaged === item.id;
+              const isSecondary = activeProfile.roleType === 'secondary_admin' && activeProfile.communityIdManaged === item.id;
 
-                {/* Badge visible de rol en la comunidad */}
-                {isPrimary && (
-                  <View style={styles.adminRoleBadge}>
-                    <Ionicons name="ribbon" size={13} color="#B45309" />
-                    <Text style={styles.adminRoleBadgeText}>Eres Administrador Principal (Titular)</Text>
+              return (
+                <View style={[styles.communityCard, isPrimary && styles.primaryCardBorder, isSecondary && styles.secondaryCardBorder]}>
+                  <Image source={{ uri: item.logoUrl }} style={styles.commLogo} />
+                  <View style={styles.commDetails}>
+                    <View style={styles.commNameRow}>
+                      <Text style={styles.commName}>{item.name}</Text>
+                      {item.isVerified && (
+                        <Ionicons name="checkmark-circle" size={18} color="#0284C7" style={{ marginLeft: 4 }} />
+                      )}
+                    </View>
+
+                    {isPrimary && (
+                      <View style={styles.adminRoleBadge}>
+                        <Ionicons name="ribbon" size={13} color="#B45309" />
+                        <Text style={styles.adminRoleBadgeText}>Eres Administrador Principal (Titular)</Text>
+                      </View>
+                    )}
+                    {isSecondary && (
+                      <View style={[styles.adminRoleBadge, { backgroundColor: '#E0F2FE' }]}>
+                        <Ionicons name="shield-half" size={13} color="#0284C7" />
+                        <Text style={[styles.adminRoleBadgeText, { color: '#0369A1' }]}>Eres Administrador Secundario (Delegado)</Text>
+                      </View>
+                    )}
+
+                    <Text style={styles.commLocation}>📍 {item.comuna}, {item.region}</Text>
+                    <Text style={styles.commDesc} numberOfLines={2}>{item.description}</Text>
+
+                    <View style={styles.commFooter}>
+                      <Text style={styles.commStats}>
+                        👥 {item.membersCount} miembros • 📅 {item.eventsCount} juntas
+                      </Text>
+                      <TouchableOpacity 
+                        style={styles.joinButton} 
+                        onPress={() => handleJoin(item)}
+                      >
+                        <Text style={styles.joinButtonText}>Unirme (+10 🐾)</Text>
+                      </TouchableOpacity>
+                    </View>
+
+                    {isPrimary && (
+                      <TouchableOpacity 
+                        style={styles.manageSecAdminsButton}
+                        onPress={() => {
+                          setSelectedAdminComm(item);
+                          setShowAdminModal(true);
+                        }}
+                      >
+                        <Ionicons name="people-circle" size={16} color="#B45309" />
+                        <Text style={styles.manageSecAdminsText}>Gestionar Administradores Secundarios</Text>
+                      </TouchableOpacity>
+                    )}
                   </View>
-                )}
-                {isSecondary && (
-                  <View style={[styles.adminRoleBadge, { backgroundColor: '#E0F2FE' }]}>
-                    <Ionicons name="shield-half" size={13} color="#0284C7" />
-                    <Text style={[styles.adminRoleBadgeText, { color: '#0369A1' }]}>Eres Administrador Secundario (Delegado)</Text>
-                  </View>
-                )}
-
-                <Text style={styles.commLocation}>📍 {item.comuna}, {item.region}</Text>
-                <Text style={styles.commDesc} numberOfLines={2}>{item.description}</Text>
-
-                <View style={styles.commFooter}>
-                  <Text style={styles.commStats}>
-                    👥 {item.membersCount} miembros • 📅 {item.eventsCount} juntas
-                  </Text>
-                  <TouchableOpacity 
-                    style={styles.joinButton} 
-                    onPress={() => handleJoin(item)}
-                  >
-                    <Text style={styles.joinButtonText}>Unirme (+10 🐾)</Text>
-                  </TouchableOpacity>
                 </View>
+              );
+            }}
+          />
+        </>
+      )}
 
-                {/* Botón de Gestión exclusivo para Admin Principal */}
-                {isPrimary && (
-                  <TouchableOpacity 
-                    style={styles.manageSecAdminsButton}
-                    onPress={() => {
-                      setSelectedAdminComm(item);
-                      setShowAdminModal(true);
-                    }}
-                  >
-                    <Ionicons name="people-circle" size={16} color="#B45309" />
-                    <Text style={styles.manageSecAdminsText}>Gestionar Administradores Secundarios</Text>
-                  </TouchableOpacity>
-                )}
-              </View>
-            </View>
-          );
-        }}
-      />
+      {/* Vista de Álbum & Fotos Comunitarias */}
+      {activeTab === 'photos' && (
+        <View style={{ flex: 1 }}>
+          {/* Botón para subir fotos */}
+          <View style={{ paddingHorizontal: 20, marginBottom: 12 }}>
+            <TouchableOpacity 
+              style={styles.uploadPhotoBtn}
+              onPress={() => setShowUploadModal(true)}
+            >
+              <Ionicons name="camera" size={18} color="#FFFFFF" />
+              <Text style={styles.uploadPhotoBtnText}>+ Compartir Foto de mi Perrito (+15 🐾)</Text>
+            </TouchableOpacity>
+          </View>
 
+          <FlatList
+            data={photos}
+            keyExtractor={item => item.id}
+            contentContainerStyle={styles.listContent}
+            renderItem={({ item }) => {
+              const canModerate = isSuperAdmin || activeProfile.roleType === 'primary_admin' || activeProfile.roleType === 'secondary_admin';
+
+              return (
+                <View style={styles.photoCard}>
+                  {/* Encabezado de la Foto */}
+                  <View style={styles.photoCardHeader}>
+                    <Image 
+                      source={{ uri: item.uploaderAvatar || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=100' }} 
+                      style={styles.photoAuthorAvatar} 
+                    />
+                    <View style={{ flex: 1, marginLeft: 10 }}>
+                      <Text style={styles.photoAuthorName}>{item.uploaderName}</Text>
+                      <Text style={styles.photoDogTag}>🐾 Con {item.dogName || 'su perrito'}</Text>
+                    </View>
+
+                    {/* Botón de Moderación para Administradores */}
+                    {canModerate && (
+                      <TouchableOpacity 
+                        style={styles.modDeleteBtn}
+                        onPress={() => handleDeletePhoto(item.id)}
+                      >
+                        <Ionicons name="trash" size={14} color="#DC2626" />
+                        <Text style={styles.modDeleteText}>Moderar</Text>
+                      </TouchableOpacity>
+                    )}
+                  </View>
+
+                  {/* Imagen */}
+                  <Image source={{ uri: item.photoUrl }} style={styles.photoImage} />
+
+                  {/* Pie de Foto */}
+                  <View style={styles.photoCardBody}>
+                    <Text style={styles.photoCaption}>{item.caption}</Text>
+                    <View style={styles.photoFooter}>
+                      <Text style={styles.photoCommunityTag}>📍 {item.communityName || 'Comunidad Oficial'}</Text>
+                      <View style={styles.photoLikesBadge}>
+                        <Ionicons name="heart" size={14} color="#EF4444" />
+                        <Text style={styles.photoLikesCount}>{item.likesCount}</Text>
+                      </View>
+                    </View>
+                  </View>
+                </View>
+              );
+            }}
+          />
+        </View>
+      )}
+
+      {/* Modal para Solicitar o Crear Comunidad */}
       <Modal visible={showRequestModal} transparent animationType="slide">
         <View style={styles.modalOverlay}>
           <View style={styles.modalCard}>
@@ -271,7 +428,62 @@ export const CommunitiesScreen: React.FC = () => {
         </View>
       </Modal>
 
-      {/* Modal de Gestión de Administradores Secundarios (Secciones 8 y 9 Plan Maestro) */}
+      {/* Modal para Compartir Fotos en la Galería */}
+      <Modal visible={showUploadModal} transparent animationType="slide">
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalCard}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>📸 Compartir Foto en la Galería</Text>
+              <TouchableOpacity onPress={() => setShowUploadModal(false)}>
+                <Ionicons name="close" size={24} color="#64748B" />
+              </TouchableOpacity>
+            </View>
+
+            <Text style={styles.modalIntro}>
+              Comparte momentos de tu perrito jugando o asistiendo a juntas oficiales. Ganarás +15 🐾 Huellitas.
+            </Text>
+
+            <Text style={styles.fieldLabel}>Perrito en la foto:</Text>
+            <TextInput
+              placeholder="Nombre de tu perrito (ej: Firulais)"
+              value={selectedDogName}
+              onChangeText={setSelectedDogName}
+              style={styles.modalInput}
+            />
+
+            <Text style={styles.fieldLabel}>URL de la Foto (o deja en blanco para predeterminada):</Text>
+            <TextInput
+              placeholder="https://... (URL de imagen)"
+              value={photoUrl}
+              onChangeText={setPhotoUrl}
+              autoCapitalize="none"
+              style={styles.modalInput}
+            />
+
+            <Text style={styles.fieldLabel}>Pie de foto o experiencia:</Text>
+            <TextInput
+              placeholder="¿Qué estaban haciendo? (ej: ¡Feliz en la junta en el parque!)"
+              value={photoCaption}
+              onChangeText={setPhotoCaption}
+              multiline
+              numberOfLines={3}
+              style={[styles.modalInput, { height: 70 }]}
+            />
+
+            <TouchableOpacity 
+              style={[styles.submitReqButton, uploading && { opacity: 0.6 }]} 
+              onPress={handleUploadPhoto}
+              disabled={uploading}
+            >
+              <Text style={styles.submitReqButtonText}>
+                {uploading ? 'Subiendo foto...' : 'Publicar Foto (+15 🐾)'}
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Modal de Gestión de Administradores Secundarios */}
       <Modal visible={showAdminModal} transparent animationType="slide">
         <View style={styles.modalOverlay}>
           <View style={styles.modalCard}>
@@ -300,29 +512,11 @@ export const CommunitiesScreen: React.FC = () => {
               </View>
             </View>
 
-            <View style={styles.permissionsBox}>
-              <Text style={styles.permissionsTitle}>Permisos Otorgados a Andrea:</Text>
-              <Text style={styles.permItem}>✅ Crear y publicar eventos/juntas oficiales</Text>
-              <Text style={styles.permItem}>✅ Moderar publicaciones y comentarios</Text>
-              <Text style={styles.permItem}>✅ Gestionar postulaciones de stands comerciales</Text>
-            </View>
-
-            {/* Regla Crítica del Plan Maestro */}
-            <View style={styles.ruleNotice}>
-              <Ionicons name="shield-checkmark" size={20} color="#D97706" />
-              <Text style={styles.ruleNoticeText}>
-                <Text style={{ fontWeight: 'bold' }}>Regla del Plan Maestro (Sección 8):</Text> Ningún Administrador Secundario puede removerte ni quitarte el control de la comunidad.
-              </Text>
-            </View>
-
             <TouchableOpacity 
-              style={styles.transferButton} 
-              onPress={() => {
-                alert('Flujo de Transferencia de Titularidad iniciado. Se enviará un código de confirmación a tu correo.');
-                setShowAdminModal(false);
-              }}
+              style={styles.closeAdminModalBtn}
+              onPress={() => setShowAdminModal(false)}
             >
-              <Text style={styles.transferButtonText}>Transferir Titularidad de Comunidad</Text>
+              <Text style={styles.closeAdminModalText}>Cerrar Panel de Gestión</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -342,7 +536,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingHorizontal: 20,
     paddingTop: 12,
-    marginBottom: 16,
+    marginBottom: 12,
   },
   title: {
     fontSize: 22,
@@ -360,29 +554,77 @@ const styles = StyleSheet.create({
     backgroundColor: '#0284C7',
     paddingHorizontal: 12,
     paddingVertical: 8,
-    borderRadius: 16,
+    borderRadius: 14,
+    gap: 4,
   },
   newCommButtonText: {
     color: '#FFFFFF',
     fontWeight: '700',
+    fontSize: 12,
+  },
+  subTabContainer: {
+    flexDirection: 'row',
+    backgroundColor: '#E2E8F0',
+    borderRadius: 14,
+    marginHorizontal: 20,
+    padding: 4,
+    marginBottom: 14,
+  },
+  subTabButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 8,
+    borderRadius: 10,
+    gap: 6,
+  },
+  subTabButtonActive: {
+    backgroundColor: '#FFFFFF',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  subTabText: {
     fontSize: 13,
-    marginLeft: 4,
+    fontWeight: '600',
+    color: '#64748B',
+  },
+  subTabTextActive: {
+    color: '#0284C7',
+    fontWeight: '700',
+  },
+  uploadPhotoBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#0284C7',
+    paddingVertical: 12,
+    borderRadius: 14,
+    gap: 6,
+  },
+  uploadPhotoBtnText: {
+    color: '#FFFFFF',
+    fontWeight: '700',
+    fontSize: 13,
   },
   searchBar: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: '#FFFFFF',
+    borderRadius: 14,
     marginHorizontal: 20,
     paddingHorizontal: 14,
-    height: 48,
-    borderRadius: 14,
+    paddingVertical: 8,
     borderWidth: 1,
     borderColor: '#E2E8F0',
     marginBottom: 16,
   },
   searchInput: {
     flex: 1,
-    marginLeft: 10,
+    marginLeft: 8,
     fontSize: 14,
     color: '#0F172A',
   },
@@ -394,25 +636,28 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     backgroundColor: '#FFFFFF',
     borderRadius: 18,
-    padding: 16,
+    padding: 14,
     marginBottom: 14,
     borderWidth: 1,
     borderColor: '#E2E8F0',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 6,
-    elevation: 2,
+  },
+  primaryCardBorder: {
+    borderColor: '#F59E0B',
+    borderWidth: 1.5,
+  },
+  secondaryCardBorder: {
+    borderColor: '#0284C7',
+    borderWidth: 1.5,
   },
   commLogo: {
-    width: 64,
-    height: 64,
-    borderRadius: 16,
+    width: 65,
+    height: 65,
+    borderRadius: 14,
     backgroundColor: '#E2E8F0',
   },
   commDetails: {
     flex: 1,
-    marginLeft: 14,
+    marginLeft: 12,
   },
   commNameRow: {
     flexDirection: 'row',
@@ -420,101 +665,8 @@ const styles = StyleSheet.create({
   },
   commName: {
     fontSize: 16,
-    fontWeight: '700',
-    color: '#0F172A',
-  },
-  commLocation: {
-    fontSize: 12,
-    color: '#64748B',
-    marginTop: 2,
-  },
-  commDesc: {
-    fontSize: 13,
-    color: '#475569',
-    marginTop: 4,
-    lineHeight: 18,
-  },
-  commFooter: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginTop: 10,
-  },
-  commStats: {
-    fontSize: 11,
-    color: '#94A3B8',
-    fontWeight: '500',
-  },
-  joinButton: {
-    backgroundColor: '#EFF6FF',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#BFDBFE',
-  },
-  joinButtonText: {
-    color: '#1D4ED8',
-    fontSize: 12,
-    fontWeight: '700',
-  },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.5)',
-    justifyContent: 'flex-end',
-  },
-  modalCard: {
-    backgroundColor: '#FFFFFF',
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    padding: 24,
-  },
-  modalHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 12,
-  },
-  modalTitle: {
-    fontSize: 18,
     fontWeight: '800',
     color: '#0F172A',
-  },
-  modalIntro: {
-    fontSize: 13,
-    color: '#64748B',
-    marginBottom: 16,
-    lineHeight: 18,
-  },
-  modalInput: {
-    backgroundColor: '#F8FAFC',
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    borderRadius: 12,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    fontSize: 14,
-    marginBottom: 12,
-  },
-  submitReqButton: {
-    backgroundColor: '#0284C7',
-    paddingVertical: 14,
-    borderRadius: 14,
-    alignItems: 'center',
-    marginTop: 8,
-  },
-  submitReqButtonText: {
-    color: '#FFFFFF',
-    fontWeight: 'bold',
-    fontSize: 15,
-  },
-  primaryCardBorder: {
-    borderColor: '#F59E0B',
-    borderWidth: 2,
-  },
-  secondaryCardBorder: {
-    borderColor: '#38BDF8',
-    borderWidth: 2,
   },
   adminRoleBadge: {
     flexDirection: 'row',
@@ -522,42 +674,213 @@ const styles = StyleSheet.create({
     backgroundColor: '#FEF3C7',
     paddingHorizontal: 8,
     paddingVertical: 3,
-    borderRadius: 8,
+    borderRadius: 6,
     alignSelf: 'flex-start',
     marginTop: 4,
     gap: 4,
   },
   adminRoleBadgeText: {
-    fontSize: 11,
+    fontSize: 10,
+    fontWeight: '700',
     color: '#B45309',
+  },
+  commLocation: {
+    fontSize: 12,
+    color: '#64748B',
+    marginTop: 2,
+  },
+  commDesc: {
+    fontSize: 12,
+    color: '#475569',
+    marginTop: 4,
+    lineHeight: 16,
+  },
+  commFooter: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginTop: 10,
+  },
+  commStats: {
+    fontSize: 11,
+    color: '#64748B',
+    fontWeight: '600',
+  },
+  joinButton: {
+    backgroundColor: '#0284C7',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 10,
+  },
+  joinButtonText: {
+    color: '#FFFFFF',
+    fontSize: 11,
     fontWeight: '700',
   },
   manageSecAdminsButton: {
     flexDirection: 'row',
     alignItems: 'center',
+    gap: 4,
     backgroundColor: '#FEF3C7',
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    borderRadius: 10,
-    marginTop: 10,
-    gap: 6,
-    borderWidth: 1,
-    borderColor: '#FDE68A',
+    paddingVertical: 6,
+    paddingHorizontal: 8,
+    borderRadius: 8,
+    marginTop: 8,
   },
   manageSecAdminsText: {
-    color: '#92400E',
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#B45309',
+  },
+  photoCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 18,
+    overflow: 'hidden',
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  photoCardHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 12,
+  },
+  photoAuthorAvatar: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: '#E2E8F0',
+  },
+  photoAuthorName: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#0F172A',
+  },
+  photoDogTag: {
+    fontSize: 11,
+    color: '#0284C7',
+    fontWeight: '600',
+  },
+  modDeleteBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FEE2E2',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+    gap: 4,
+  },
+  modDeleteText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#DC2626',
+  },
+  photoImage: {
+    width: '100%',
+    height: 220,
+    backgroundColor: '#E2E8F0',
+  },
+  photoCardBody: {
+    padding: 12,
+  },
+  photoCaption: {
+    fontSize: 13,
+    color: '#1E293B',
+    lineHeight: 18,
+    marginBottom: 8,
+  },
+  photoFooter: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  photoCommunityTag: {
+    fontSize: 11,
+    color: '#64748B',
+    fontWeight: '500',
+  },
+  photoLikesBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#FEE2E2',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+  },
+  photoLikesCount: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#DC2626',
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 24,
+  },
+  modalCard: {
+    width: '100%',
+    maxWidth: 420,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 20,
+    padding: 20,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: '800',
+    color: '#0F172A',
+  },
+  modalIntro: {
+    fontSize: 12,
+    color: '#64748B',
+    lineHeight: 16,
+    marginBottom: 12,
+  },
+  fieldLabel: {
     fontSize: 12,
     fontWeight: '700',
+    color: '#334155',
+    marginBottom: 4,
+  },
+  modalInput: {
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    fontSize: 13,
+    marginBottom: 10,
+  },
+  submitReqButton: {
+    backgroundColor: '#0284C7',
+    paddingVertical: 12,
+    borderRadius: 12,
+    alignItems: 'center',
+    marginTop: 6,
+  },
+  submitReqButtonText: {
+    color: '#FFFFFF',
+    fontWeight: '700',
+    fontSize: 14,
   },
   secAdminList: {
-    marginBottom: 14,
+    marginVertical: 14,
   },
   secAdminItem: {
     flexDirection: 'row',
     alignItems: 'center',
+    padding: 10,
     backgroundColor: '#F8FAFC',
-    padding: 12,
-    borderRadius: 14,
+    borderRadius: 12,
     borderWidth: 1,
     borderColor: '#E2E8F0',
   },
@@ -567,64 +890,29 @@ const styles = StyleSheet.create({
     borderRadius: 22,
   },
   secAdminName: {
-    fontSize: 14,
-    fontWeight: 'bold',
+    fontSize: 13,
+    fontWeight: '700',
     color: '#0F172A',
   },
   secAdminEmail: {
-    fontSize: 12,
+    fontSize: 11,
     color: '#64748B',
   },
   secAdminRole: {
     fontSize: 11,
-    color: '#0284C7',
     fontWeight: '600',
+    color: '#0284C7',
     marginTop: 2,
   },
-  permissionsBox: {
-    backgroundColor: '#F0FDF4',
-    padding: 12,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#BBF7D0',
-    marginBottom: 14,
-  },
-  permissionsTitle: {
-    fontSize: 12,
-    fontWeight: 'bold',
-    color: '#166534',
-    marginBottom: 6,
-  },
-  permItem: {
-    fontSize: 12,
-    color: '#15803D',
-    marginBottom: 4,
-  },
-  ruleNotice: {
-    flexDirection: 'row',
-    backgroundColor: '#FFFBEB',
-    padding: 12,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#FDE68A',
-    marginBottom: 16,
-    gap: 8,
-  },
-  ruleNoticeText: {
-    fontSize: 12,
-    color: '#92400E',
-    flex: 1,
-    lineHeight: 16,
-  },
-  transferButton: {
-    backgroundColor: '#DC2626',
+  closeAdminModalBtn: {
+    backgroundColor: '#F1F5F9',
     paddingVertical: 12,
     borderRadius: 12,
     alignItems: 'center',
   },
-  transferButtonText: {
-    color: '#FFFFFF',
-    fontWeight: '700',
+  closeAdminModalText: {
     fontSize: 13,
+    fontWeight: '700',
+    color: '#475569',
   },
 });

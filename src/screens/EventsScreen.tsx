@@ -149,7 +149,7 @@ export const EventsScreen: React.FC = () => {
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
       <View style={styles.header}>
-        <View style={{ flex: 1 }}>
+        <View style={{ flex: 1, paddingRight: 12 }}>
           <Text style={styles.title}>📅 Juntas & Encuentros</Text>
           <Text style={styles.subtitle}>Actividades oficiales y vida social para tu perrito</Text>
         </View>
@@ -379,6 +379,9 @@ const styles = StyleSheet.create({
     backgroundColor: '#F8FAFC',
   },
   header: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
     paddingHorizontal: 20,
     paddingTop: 12,
     marginBottom: 16,

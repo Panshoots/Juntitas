@@ -1,4 +1,4 @@
-﻿import { 
+import { 
   collection, 
   doc, 
   getDocs, 
@@ -291,4 +291,39 @@ export const validateBusinessCouponInDb = async (
   } catch (err: any) {
     return { success: false, message: 'Error validando cupón: ' + err.message };
   }
+};
+
+/**
+ * Obtener todos los canjes y cupones de un usuario
+ */
+export const getUserRedemptions = async (userId: string): Promise<RewardRedemption[]> => {
+  try {
+    const q = query(collection(db, 'redemptions'), where('userId', '==', userId));
+    const snap = await getDocs(q);
+    const list: RewardRedemption[] = [];
+    if (!snap.empty) {
+      snap.forEach(d => {
+        const data = d.data();
+        list.push({
+          id: d.id,
+          rewardId: data.rewardId,
+          rewardTitle: data.rewardTitle,
+          rewardType: data.rewardType,
+          userId: data.userId,
+          userName: data.userName,
+          businessId: data.businessId,
+          uniqueCode: data.uniqueCode,
+          qrPayload: data.qrPayload,
+          status: data.status,
+          pawsSpent: data.pawsSpent,
+          createdAt: data.createdAt?.toDate ? data.createdAt.toDate() : new Date(),
+          usedAt: data.usedAt?.toDate ? data.usedAt.toDate() : undefined
+        });
+      });
+      return list;
+    }
+  } catch (err) {
+    console.warn('Error obteniendo canjes del usuario:', err);
+  }
+  return [];
 };

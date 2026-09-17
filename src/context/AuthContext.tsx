@@ -15,6 +15,7 @@ import { AppUser, UserRole, UserStatus } from '../models/User';
 import { Dog } from '../models/Dog';
 import { SecondaryAdminPermissions } from '../models/Community';
 import { createUserInDb, getUsersFromDb } from '../services/userService';
+import { getDogsByOwner, createDogForOwner } from '../services/dogService';
 
 export type SessionState = 'onboarding' | 'auth' | 'pending_approval' | 'authenticated';
 
@@ -80,6 +81,11 @@ interface AuthContextType {
   sendPasswordReset: (email: string) => Promise<{ success: boolean; message: string }>;
   logout: () => void;
 
+  // Gestión de perritos (Máximo 2 en Plan Estándar)
+  loadUserDogs: (userId: string) => Promise<Dog[]>;
+  addDogToUser: (dogData: any) => Promise<{ success: boolean; message: string }>;
+  refreshDogs: () => Promise<void>;
+
   // Permisos helpers
   isSuperAdmin: boolean;
   isPrimaryAdminOf: (communityId: string) => boolean;
@@ -108,6 +114,9 @@ const AuthContext = createContext<AuthContextType>({
   loginWithGoogle: async () => ({ success: false, message: '' }),
   sendPasswordReset: async () => ({ success: false, message: '' }),
   logout: () => {},
+  loadUserDogs: async () => [],
+  addDogToUser: async () => ({ success: false, message: '' }),
+  refreshDogs: async () => {},
   isSuperAdmin: false,
   isPrimaryAdminOf: () => false,
   canCreateEventFor: () => false,
@@ -375,7 +384,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       // Silencioso
     }
     setCurrentUser(SUPER_ADMIN_USER);
-    setCurrentDogs([]);
+    await loadUserDogs(SUPER_ADMIN_USER.id);
     setSessionState('authenticated');
     return { 
       success: true, 
@@ -460,6 +469,44 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
+  // Cargar perritos del usuario activo
+  const loadUserDogs = async (userId: string): Promise<Dog[]> => {
+    if (!userId) return [];
+    try {
+      const dogs = await getDogsByOwner(userId);
+      setCurrentDogs(dogs);
+      return dogs;
+    } catch (e) {
+      console.warn('Error cargando perritos del usuario:', e);
+      return [];
+    }
+  };
+
+  const addDogToUser = async (dogData: any): Promise<{ success: boolean; message: string }> => {
+    if (!currentUser?.id) {
+      return { success: false, message: 'Debes iniciar sesión para registrar a tu perrito.' };
+    }
+    const res = await createDogForOwner(currentUser.id, dogData);
+    if (res.success && res.dog) {
+      await loadUserDogs(currentUser.id);
+      setCurrentUser(prev => ({ ...prev, pawBalance: (prev.pawBalance || 0) + 50 }));
+    }
+    return { success: res.success, message: res.message };
+  };
+
+  const refreshDogs = async () => {
+    if (currentUser?.id) {
+      await loadUserDogs(currentUser.id);
+    }
+  };
+
+  // Cargar perritos automáticamente cuando cambia el usuario
+  useEffect(() => {
+    if (currentUser?.id) {
+      loadUserDogs(currentUser.id);
+    }
+  }, [currentUser?.id]);
+
   const logout = async () => {
     try {
       await signOut(auth);
@@ -501,6 +548,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         loginWithGoogle,
         sendPasswordReset,
         logout,
+        loadUserDogs,
+        addDogToUser,
+        refreshDogs,
         isSuperAdmin,
         isPrimaryAdminOf,
         canCreateEventFor,
