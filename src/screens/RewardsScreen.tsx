@@ -122,37 +122,61 @@ export const RewardsScreen: React.FC = () => {
               </Text>
             </View>
           }
-          renderItem={({ item }) => (
-            <View style={styles.rewardCard}>
-              <Image source={{ uri: item.imageUrl }} style={styles.rewardImage} />
-              <View style={styles.cardBody}>
-                {item.businessName && (
-                  <Text style={styles.businessLabel}>🏪 {item.businessName}</Text>
-                )}
-                <Text style={styles.rewardTitle}>{item.title}</Text>
-                <Text style={styles.rewardDesc}>{item.description}</Text>
+          renderItem={({ item }) => {
+            const isOutOfStock = item.stockAvailable !== undefined && item.stockAvailable <= 0;
 
-                {item.originalPriceCLP ? (
-                  <Text style={styles.priceClpText}>
-                    Valor comercial: ${item.originalPriceCLP.toLocaleString('es-CL')} CLP
-                  </Text>
-                ) : null}
+            return (
+              <View style={[styles.rewardCard, isOutOfStock && { opacity: 0.75 }]}>
+                <Image source={{ uri: item.imageUrl }} style={styles.rewardImage} />
+                <View style={styles.cardBody}>
+                  {item.businessName && (
+                    <Text style={styles.businessLabel}>🏪 {item.businessName}</Text>
+                  )}
+                  <Text style={styles.rewardTitle}>{item.title}</Text>
+                  <Text style={styles.rewardDesc}>{item.description}</Text>
 
-                <View style={styles.cardFooter}>
-                  <View style={styles.costBadge}>
-                    <Ionicons name="paw" size={16} color="#D97706" />
-                    <Text style={styles.costText}>{item.pawsCost} Huellitas</Text>
+                  {item.originalPriceCLP ? (
+                    <Text style={styles.priceClpText}>
+                      Valor comercial: ${item.originalPriceCLP.toLocaleString('es-CL')} CLP
+                    </Text>
+                  ) : null}
+
+                  {/* Indicador de Stock Restante */}
+                  <View style={[styles.stockBadge, isOutOfStock ? styles.stockBadgeOut : styles.stockBadgeAvailable]}>
+                    <Ionicons 
+                      name={isOutOfStock ? "alert-circle" : "cube"} 
+                      size={13} 
+                      color={isOutOfStock ? "#DC2626" : "#0284C7"} 
+                    />
+                    <Text style={[styles.stockText, isOutOfStock ? styles.stockTextOut : styles.stockTextAvailable]}>
+                      {isOutOfStock 
+                        ? 'Agotado (Sin stock)' 
+                        : `Stock: ${item.stockAvailable} unidad${item.stockAvailable === 1 ? '' : 'es'} disponible${item.stockAvailable === 1 ? '' : 's'}`}
+                    </Text>
                   </View>
-                  <TouchableOpacity 
-                    style={[styles.redeemButton, pawBalance < item.pawsCost && styles.redeemButtonDisabled]}
-                    onPress={() => handleRedeem(item)}
-                  >
-                    <Text style={styles.redeemButtonText}>Canjear</Text>
-                  </TouchableOpacity>
+
+                  <View style={styles.cardFooter}>
+                    <View style={styles.costBadge}>
+                      <Ionicons name="paw" size={16} color="#D97706" />
+                      <Text style={styles.costText}>{item.pawsCost} Huellitas</Text>
+                    </View>
+                    <TouchableOpacity 
+                      style={[
+                        styles.redeemButton, 
+                        (isOutOfStock || pawBalance < item.pawsCost) && styles.redeemButtonDisabled
+                      ]}
+                      onPress={() => handleRedeem(item)}
+                      disabled={isOutOfStock}
+                    >
+                      <Text style={styles.redeemButtonText}>
+                        {isOutOfStock ? 'Agotado' : 'Canjear'}
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
                 </View>
               </View>
-            </View>
-          )}
+            );
+          }}
         />
       )}
 
@@ -398,6 +422,32 @@ const styles = StyleSheet.create({
     color: '#059669',
     marginTop: 2,
     marginBottom: 8,
+  },
+  stockBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    gap: 5,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+    marginBottom: 12,
+  },
+  stockBadgeAvailable: {
+    backgroundColor: '#E0F2FE',
+  },
+  stockBadgeOut: {
+    backgroundColor: '#FEE2E2',
+  },
+  stockText: {
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  stockTextAvailable: {
+    color: '#0369A1',
+  },
+  stockTextOut: {
+    color: '#B91C1C',
   },
   loadingBox: {
     paddingVertical: 60,

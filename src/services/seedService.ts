@@ -351,7 +351,7 @@ export const seedRealisticData = async (
         imageUrl: 'https://images.unsplash.com/photo-1541599540903-216a46ca1dc0?w=400',
         businessId: 'biz-guau-gourmet',
         businessName: 'Guau Gourmet Pastelería Canina',
-        stockAvailable: 15,
+        stockAvailable: 2,
         status: 'active',
         createdAt: new Date()
       },
@@ -365,7 +365,7 @@ export const seedRealisticData = async (
         imageUrl: 'https://images.unsplash.com/photo-1601758228041-f3b2795255f1?w=400',
         businessId: 'biz-perrunos-chic',
         businessName: 'Perrunos Chic Accesorios',
-        stockAvailable: 5,
+        stockAvailable: 1,
         status: 'active',
         createdAt: new Date()
       },
@@ -379,7 +379,7 @@ export const seedRealisticData = async (
         imageUrl: 'https://images.unsplash.com/photo-1583337130417-3346a1be7dee?w=400',
         businessId: 'biz-natural-pet',
         businessName: 'Natural Pet Alimentos BARF',
-        stockAvailable: 8,
+        stockAvailable: 3,
         status: 'active',
         createdAt: new Date()
       },
@@ -393,7 +393,7 @@ export const seedRealisticData = async (
         imageUrl: 'https://images.unsplash.com/photo-1517849845537-4d257902454a?w=400',
         businessId: 'biz-spa-canino',
         businessName: 'Spa Canino Burbujas Felices',
-        stockAvailable: 4,
+        stockAvailable: 2,
         status: 'active',
         createdAt: new Date()
       }
