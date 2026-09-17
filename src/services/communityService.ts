@@ -1,11 +1,14 @@
 import { 
   collection, 
   doc, 
+  getDoc,
   getDocs, 
   setDoc, 
   addDoc, 
   updateDoc, 
-  serverTimestamp 
+  serverTimestamp,
+  arrayUnion,
+  increment
 } from 'firebase/firestore';
 import { db } from '../firebase/config';
 import { Community, CommunityRequest, SecondaryAdminPermissions } from '../models/Community';
@@ -175,18 +178,88 @@ export const getCommunities = async (): Promise<Community[]> => {
 };
 
 export const joinCommunity = async (communityId: string, userId: string): Promise<{ success: boolean; message: string }> => {
-  const comm = localCommunities.find(c => c.id === communityId);
-  if (!comm) return { success: false, message: 'Comunidad no encontrada.' };
-
-  comm.membersCount += 1;
   try {
-    await updateDoc(doc(db, 'communities', communityId), {
-      membersCount: comm.membersCount,
-      updatedAt: serverTimestamp()
-    });
+    const commRef = doc(db, 'communities', communityId);
+    const commSnap = await getDoc(commRef);
+    if (commSnap.exists()) {
+      const data = commSnap.data();
+      const currentMembers: string[] = data.members || [];
+      if (currentMembers.includes(userId)) {
+        return { success: false, message: `¡Ya eres miembro de la comunidad ${data.name || ''}!` };
+      }
+      const newCount = (data.membersCount || 0) + 1;
+      await updateDoc(commRef, {
+        membersCount: newCount,
+        members: arrayUnion(userId),
+        updatedAt: serverTimestamp()
+      });
+      const local = localCommunities.find(c => c.id === communityId);
+      if (local) local.membersCount = newCount;
+      return { success: true, message: `¡Te has unido exitosamente a ${data.name}!` };
+    }
   } catch (err) {
     console.warn('Error actualizando miembros en Firestore:', err);
   }
 
+  const comm = localCommunities.find(c => c.id === communityId);
+  if (!comm) return { success: false, message: 'Comunidad no encontrada.' };
+
+  comm.membersCount += 1;
   return { success: true, message: '¡Te has unido exitosamente a ' + comm.name + '!' };
+};
+
+export const createOfficialCommunity = async (
+  communityData: {
+    name: string;
+    description: string;
+    instagramHandle: string;
+    region: string;
+    comuna: string;
+    primaryAdminId: string;
+    logoUrl?: string;
+  }
+): Promise<{ success: boolean; id?: string; message: string }> => {
+  const commId = 'comm-' + Date.now();
+  const newComm: Community = {
+    id: commId,
+    name: communityData.name,
+    slug: communityData.name.toLowerCase().replace(/\s+/g, '-'),
+    description: communityData.description || 'Comunidad canina oficial.',
+    logoUrl: communityData.logoUrl || 'https://images.unsplash.com/photo-1548199973-03cce0bbc87b?w=300',
+    coverPhotoUrl: 'https://images.unsplash.com/photo-1601758228041-f3b2795255f1?w=800',
+    instagramHandle: communityData.instagramHandle || '@juntitas.app',
+    region: communityData.region || 'Metropolitana',
+    comuna: communityData.comuna || 'Santiago',
+    status: 'activa',
+    isVerified: true,
+    joinType: 'libre',
+    membersCount: 1,
+    eventsCount: 0,
+    primaryAdminId: communityData.primaryAdminId,
+    secondaryAdmins: [],
+    createdAt: new Date(),
+    updatedAt: new Date()
+  };
+
+  try {
+    await setDoc(doc(db, 'communities', commId), {
+      ...newComm,
+      members: [communityData.primaryAdminId],
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp()
+    });
+  } catch (err) {
+    console.warn('Error creando comunidad oficial en Firestore:', err);
+  }
+
+  localCommunities.unshift(newComm);
+  await logAuditAction(
+    communityData.primaryAdminId,
+    'COMMUNITY_CREATE_OFFICIAL',
+    'communities',
+    commId,
+    `Comunidad oficial creada directamente: ${newComm.name}`
+  );
+
+  return { success: true, id: commId, message: `¡Comunidad "${newComm.name}" creada y publicada oficialmente!` };
 };

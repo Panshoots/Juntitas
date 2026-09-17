@@ -13,13 +13,13 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Community } from '../models/Community';
-import { getCommunities, joinCommunity, submitCommunityRequest } from '../services/communityService';
+import { getCommunities, joinCommunity, submitCommunityRequest, createOfficialCommunity } from '../services/communityService';
 import { awardPaws } from '../services/gamificationService';
 import { useAuth } from '../context/AuthContext';
 
 export const CommunitiesScreen: React.FC = () => {
   const insets = useSafeAreaInsets();
-  const { activeProfile, isPrimaryAdminOf, isSuperAdmin } = useAuth();
+  const { currentUser, activeProfile, isPrimaryAdminOf, isSuperAdmin } = useAuth();
   const [communities, setCommunities] = useState<Community[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
 
@@ -43,10 +43,14 @@ export const CommunitiesScreen: React.FC = () => {
   };
 
   const handleJoin = async (community: Community) => {
-    const res = await joinCommunity(community.id, activeProfile.user.id);
+    if (!currentUser || !currentUser.id) {
+      alert('Debes iniciar sesión para unirte a una comunidad.');
+      return;
+    }
+    const res = await joinCommunity(community.id, currentUser.id);
     alert(res.message);
     if (res.success) {
-      await awardPaws(activeProfile.user.id, 'community_joined', community.id);
+      await awardPaws(currentUser.id, 'community_joined', community.id);
       loadCommunities();
     }
   };
@@ -57,11 +61,37 @@ export const CommunitiesScreen: React.FC = () => {
       return;
     }
 
+    if (!currentUser || !currentUser.id) {
+      alert('Debes iniciar sesión para realizar esta acción.');
+      return;
+    }
+
+    if (isSuperAdmin) {
+      const res = await createOfficialCommunity({
+        name: reqName,
+        description: reqDesc,
+        instagramHandle: reqInstagram,
+        region: 'Metropolitana',
+        comuna: reqComuna,
+        primaryAdminId: currentUser.id
+      });
+      alert(res.message);
+      if (res.success) {
+        setShowRequestModal(false);
+        setReqName('');
+        setReqDesc('');
+        setReqInstagram('');
+        setReqComuna('');
+        loadCommunities();
+      }
+      return;
+    }
+
     const res = await submitCommunityRequest({
       communityName: reqName,
-      applicantId: mockCurrentUser.id,
-      applicantEmail: mockCurrentUser.email,
-      applicantName: mockCurrentUser.displayName,
+      applicantId: currentUser.id,
+      applicantEmail: currentUser.email,
+      applicantName: currentUser.displayName,
       description: reqDesc,
       instagramHandle: reqInstagram,
       verificationEvidenceUrls: [],
@@ -95,11 +125,11 @@ export const CommunitiesScreen: React.FC = () => {
           <Text style={styles.subtitle}>Encuentra el grupo ideal para tu perrito</Text>
         </View>
         <TouchableOpacity 
-          style={styles.newCommButton} 
+          style={[styles.newCommButton, isSuperAdmin && { backgroundColor: '#DC2626' }]} 
           onPress={() => setShowRequestModal(true)}
         >
-          <Ionicons name="add" size={20} color="#FFFFFF" />
-          <Text style={styles.newCommButtonText}>Solicitar</Text>
+          <Ionicons name={isSuperAdmin ? "shield-checkmark" : "add"} size={18} color="#FFFFFF" />
+          <Text style={styles.newCommButtonText}>{isSuperAdmin ? 'Crear Oficial' : 'Solicitar'}</Text>
         </TouchableOpacity>
       </View>
 
@@ -185,14 +215,18 @@ export const CommunitiesScreen: React.FC = () => {
         <View style={styles.modalOverlay}>
           <View style={styles.modalCard}>
             <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Solicitar Comunidad Oficial</Text>
+              <Text style={styles.modalTitle}>
+                {isSuperAdmin ? '👑 Crear Comunidad Oficial' : 'Solicitar Comunidad Oficial'}
+              </Text>
               <TouchableOpacity onPress={() => setShowRequestModal(false)}>
                 <Ionicons name="close" size={24} color="#64748B" />
               </TouchableOpacity>
             </View>
 
             <Text style={styles.modalIntro}>
-              Para evitar comunidades duplicadas y mantener la confianza de los tutores, un Super Administrador revisará los antecedentes.
+              {isSuperAdmin 
+                ? 'Como Super Administrador Supremo, la comunidad quedará activa, verificada y publicada de inmediato.' 
+                : 'Para evitar comunidades duplicadas y mantener la confianza de los tutores, un Super Administrador revisará los antecedentes.'}
             </Text>
 
             <TextInput
@@ -225,8 +259,13 @@ export const CommunitiesScreen: React.FC = () => {
               style={[styles.modalInput, { height: 70 }]}
             />
 
-            <TouchableOpacity style={styles.submitReqButton} onPress={handleSendRequest}>
-              <Text style={styles.submitReqButtonText}>Enviar Solicitud a Verificación</Text>
+            <TouchableOpacity 
+              style={[styles.submitReqButton, isSuperAdmin && { backgroundColor: '#DC2626' }]} 
+              onPress={handleSendRequest}
+            >
+              <Text style={styles.submitReqButtonText}>
+                {isSuperAdmin ? '🚀 Publicar Comunidad Inmediatamente' : 'Enviar Solicitud a Verificación'}
+              </Text>
             </TouchableOpacity>
           </View>
         </View>

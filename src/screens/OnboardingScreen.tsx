@@ -79,9 +79,14 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({
           </View>
           <View style={{ marginLeft: 10 }}>
             <Text style={styles.brandTitle}>Juntitas</Text>
-            <Text style={styles.brandSubtitle}>Comunidades, Juntas & Pasaporte Canino</Text>
+            <Text style={styles.brandSubtitle}>Comunidades, Juntas & Pasaporte</Text>
           </View>
         </View>
+
+        <TouchableOpacity style={styles.topLoginBtn} onPress={onStartLogin}>
+          <Ionicons name="log-in-outline" size={16} color="#0284C7" />
+          <Text style={styles.topLoginBtnText}>Iniciar Sesión</Text>
+        </TouchableOpacity>
       </View>
 
       {/* Contenido del Slide Activo */}
@@ -179,6 +184,20 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: '#64748B',
     fontWeight: '500',
+  },
+  topLoginBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#E0F2FE',
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 14,
+    gap: 5,
+  },
+  topLoginBtnText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#0284C7',
   },
   quickAdminBtn: {
     flexDirection: 'row',

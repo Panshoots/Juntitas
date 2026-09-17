@@ -4,7 +4,10 @@ import {
   signInWithEmailAndPassword, 
   signOut, 
   onAuthStateChanged,
-  updateProfile 
+  updateProfile,
+  GoogleAuthProvider,
+  signInWithPopup,
+  sendPasswordResetEmail
 } from 'firebase/auth';
 import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { auth, db } from '../firebase/config';
@@ -73,6 +76,8 @@ interface AuthContextType {
   registerUser: (payload: RegisterPayload) => Promise<{ success: boolean; message: string }>;
   loginUser: (email: string, password?: string) => Promise<{ success: boolean; message: string }>;
   loginAsSuperAdmin: () => Promise<{ success: boolean; message: string }>;
+  loginWithGoogle: () => Promise<{ success: boolean; message: string }>;
+  sendPasswordReset: (email: string) => Promise<{ success: boolean; message: string }>;
   logout: () => void;
 
   // Permisos helpers
@@ -100,6 +105,8 @@ const AuthContext = createContext<AuthContextType>({
   registerUser: async () => ({ success: false, message: '' }),
   loginUser: async () => ({ success: false, message: '' }),
   loginAsSuperAdmin: async () => ({ success: false, message: '' }),
+  loginWithGoogle: async () => ({ success: false, message: '' }),
+  sendPasswordReset: async () => ({ success: false, message: '' }),
   logout: () => {},
   isSuperAdmin: false,
   isPrimaryAdminOf: () => false,
@@ -376,6 +383,83 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
   };
 
+  // Inicio de sesión con Google (Gmail)
+  const loginWithGoogle = async (): Promise<{ success: boolean; message: string }> => {
+    try {
+      const provider = new GoogleAuthProvider();
+      provider.setCustomParameters({ prompt: 'select_account' });
+      const result = await signInWithPopup(auth, provider);
+      const firebaseUser = result.user;
+
+      const userDocRef = doc(db, 'users', firebaseUser.uid);
+      const userSnap = await getDoc(userDocRef);
+
+      let appUser: AppUser;
+      if (userSnap.exists()) {
+        appUser = userSnap.data() as AppUser;
+      } else {
+        appUser = {
+          id: firebaseUser.uid,
+          displayName: firebaseUser.displayName || 'Usuario Google',
+          email: firebaseUser.email || '',
+          photoURL: firebaseUser.photoURL || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=400',
+          bio: 'Tutor en Juntitas con cuenta de Google.',
+          roleType: 'member',
+          location: { region: 'Metropolitana', comuna: 'Santiago' },
+          contact: { phone: '', isPublic: false },
+          privacy: { showDogsPublicly: true, showCommunitiesPublicly: true, showAttendancePublicly: true },
+          pawBalance: 100,
+          status: 'ACTIVO',
+          createdAt: new Date()
+        };
+        await setDoc(userDocRef, {
+          ...appUser,
+          createdAt: serverTimestamp()
+        });
+      }
+
+      setCurrentUser(appUser);
+      setSessionState('authenticated');
+      return { success: true, message: `¡Bienvenido(a), ${appUser.displayName}!` };
+    } catch (err: any) {
+      console.warn('Google Sign-In Error:', err);
+      if (err.code === 'auth/popup-closed-by-user') {
+        return { success: false, message: 'La ventana de Google se cerró antes de completar el acceso.' };
+      }
+      if (err.code === 'auth/configuration-not-found' || err.code === 'auth/operation-not-allowed') {
+        return { 
+          success: false, 
+          message: 'Google Sign-In requiere estar habilitado en la consola de Firebase Console (Authentication > Sign-in method > Google).' 
+        };
+      }
+      return { success: false, message: 'Error con Google Sign-In: ' + (err.message || err) };
+    }
+  };
+
+  // Restablecer contraseña mediante correo electrónico
+  const sendPasswordReset = async (emailToReset: string): Promise<{ success: boolean; message: string }> => {
+    try {
+      const clean = (emailToReset || '').trim().toLowerCase();
+      if (!clean) {
+        return { success: false, message: 'Por favor ingresa tu correo electrónico.' };
+      }
+      await sendPasswordResetEmail(auth, clean);
+      return { 
+        success: true, 
+        message: `¡Correo enviado! Te enviamos un enlace a ${clean} para restablecer tu contraseña. Revisa tu bandeja de entrada o spam.` 
+      };
+    } catch (err: any) {
+      console.warn('Password reset error:', err);
+      if (err.code === 'auth/user-not-found') {
+        return { success: false, message: 'No existe ninguna cuenta registrada con este correo electrónico.' };
+      }
+      if (err.code === 'auth/invalid-email') {
+        return { success: false, message: 'El formato de correo no es válido.' };
+      }
+      return { success: false, message: 'Error al enviar restablecimiento: ' + (err.message || err) };
+    }
+  };
+
   const logout = async () => {
     try {
       await signOut(auth);
@@ -414,6 +498,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         registerUser,
         loginUser,
         loginAsSuperAdmin,
+        loginWithGoogle,
+        sendPasswordReset,
         logout,
         isSuperAdmin,
         isPrimaryAdminOf,

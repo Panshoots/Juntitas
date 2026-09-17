@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   View, 
   Text, 
@@ -6,8 +6,10 @@ import {
   TextInput, 
   TouchableOpacity, 
   ScrollView, 
-  Alert 
+  Alert,
+  Modal 
 } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '../context/AuthContext';
@@ -23,14 +25,37 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
   onBackToOnboarding
 }) => {
   const insets = useSafeAreaInsets();
-  const { registerUser, loginUser, loginAsSuperAdmin } = useAuth();
+  const { registerUser, loginUser, loginAsSuperAdmin, loginWithGoogle, sendPasswordReset } = useAuth();
 
   const [mode, setMode] = useState<'login' | 'register'>(initialMode);
   const [loading, setLoading] = useState(false);
 
+  // Estados para recordar credenciales y recuperar clave
+  const [rememberMe, setRememberMe] = useState(true);
+  const [showForgotModal, setShowForgotModal] = useState(false);
+  const [forgotEmail, setForgotEmail] = useState('');
+  const [sendingReset, setSendingReset] = useState(false);
+
   useEffect(() => {
     setMode(initialMode);
   }, [initialMode]);
+
+  useEffect(() => {
+    const loadSavedCredentials = async () => {
+      try {
+        const saved = await AsyncStorage.getItem('@juntitas_remember_creds');
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          if (parsed.savedEmail) setEmail(parsed.savedEmail);
+          if (parsed.savedPassword) setPassword(parsed.savedPassword);
+          setRememberMe(true);
+        }
+      } catch (e) {
+        console.warn('Error cargando credenciales:', e);
+      }
+    };
+    loadSavedCredentials();
+  }, []);
 
   // Campos comunes
   const [email, setEmail] = useState('');
@@ -67,6 +92,24 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
       const res = await loginUser(email, password);
       setLoading(false);
       alert(res.message);
+      if (res.success) {
+        if (rememberMe) {
+          try {
+            await AsyncStorage.setItem(
+              '@juntitas_remember_creds', 
+              JSON.stringify({ savedEmail: email, savedPassword: password })
+            );
+          } catch (e) {
+            // Silencioso
+          }
+        } else {
+          try {
+            await AsyncStorage.removeItem('@juntitas_remember_creds');
+          } catch (e) {
+            // Silencioso
+          }
+        }
+      }
       return;
     }
 
@@ -124,6 +167,28 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
     setLoading(false);
     if (!res.success) {
       alert(res.message);
+    }
+  };
+
+  const handleGoogleLogin = async () => {
+    setLoading(true);
+    const res = await loginWithGoogle();
+    setLoading(false);
+    alert(res.message);
+  };
+
+  const handleSendResetEmail = async () => {
+    if (!forgotEmail) {
+      alert('Por favor ingresa tu correo electrónico.');
+      return;
+    }
+    setSendingReset(true);
+    const res = await sendPasswordReset(forgotEmail);
+    setSendingReset(false);
+    alert(res.message);
+    if (res.success) {
+      setShowForgotModal(false);
+      setForgotEmail('');
     }
   };
 
@@ -394,6 +459,30 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
             secureTextEntry
             style={styles.input}
           />
+
+          {/* Opciones de Recordar datos y Recuperar Contraseña */}
+          <View style={styles.loginExtraRow}>
+            <TouchableOpacity 
+              style={styles.rememberRow} 
+              onPress={() => setRememberMe(!rememberMe)}
+            >
+              <Ionicons 
+                name={rememberMe ? "checkbox" : "square-outline"} 
+                size={20} 
+                color={rememberMe ? "#0284C7" : "#94A3B8"} 
+              />
+              <Text style={styles.rememberText}>Recordar contraseña</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity 
+              onPress={() => {
+                setForgotEmail(email);
+                setShowForgotModal(true);
+              }}
+            >
+              <Text style={styles.forgotText}>¿Olvidaste tu clave?</Text>
+            </TouchableOpacity>
+          </View>
         </View>
       )}
 
@@ -411,6 +500,60 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
               : 'Iniciar Sesión'}
         </Text>
       </TouchableOpacity>
+
+      {/* Separador */}
+      <View style={styles.dividerRow}>
+        <View style={styles.dividerLine} />
+        <Text style={styles.dividerText}>o ingresa fácilmente con</Text>
+        <View style={styles.dividerLine} />
+      </View>
+
+      {/* Botón de Google (Gmail) */}
+      <TouchableOpacity 
+        style={styles.googleButton}
+        onPress={handleGoogleLogin}
+        disabled={loading}
+      >
+        <Ionicons name="logo-google" size={20} color="#EA4335" />
+        <Text style={styles.googleButtonText}>Continuar con Google (Gmail)</Text>
+      </TouchableOpacity>
+
+      {/* Modal para Recuperar Contraseña */}
+      <Modal visible={showForgotModal} transparent animationType="fade">
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalCard}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>🔑 Recuperar Contraseña</Text>
+              <TouchableOpacity onPress={() => setShowForgotModal(false)}>
+                <Ionicons name="close" size={24} color="#64748B" />
+              </TouchableOpacity>
+            </View>
+
+            <Text style={styles.modalSub}>
+              Ingresa tu correo electrónico registrado y te enviaremos un enlace oficial de Firebase para restablecer tu clave de forma segura.
+            </Text>
+
+            <TextInput
+              placeholder="tu.correo@ejemplo.cl"
+              value={forgotEmail}
+              onChangeText={setForgotEmail}
+              keyboardType="email-address"
+              autoCapitalize="none"
+              style={styles.modalInput}
+            />
+
+            <TouchableOpacity 
+              style={[styles.modalSubmitBtn, sendingReset && { opacity: 0.6 }]}
+              onPress={handleSendResetEmail}
+              disabled={sendingReset}
+            >
+              <Text style={styles.modalSubmitBtnText}>
+                {sendingReset ? 'Enviando enlace...' : 'Enviar Correo de Recuperación'}
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </ScrollView>
   );
 };
@@ -695,6 +838,118 @@ const styles = StyleSheet.create({
     color: '#334155',
     marginBottom: 6,
     marginTop: 4,
+  },
+  loginExtraRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginTop: 10,
+    marginBottom: 6,
+  },
+  rememberRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  rememberText: {
+    fontSize: 13,
+    color: '#334155',
+    fontWeight: '500',
+  },
+  forgotText: {
+    fontSize: 13,
+    color: '#0284C7',
+    fontWeight: '600',
+  },
+  dividerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginVertical: 18,
+    gap: 10,
+  },
+  dividerLine: {
+    flex: 1,
+    height: 1,
+    backgroundColor: '#CBD5E1',
+  },
+  dividerText: {
+    fontSize: 12,
+    color: '#64748B',
+    fontWeight: '500',
+  },
+  googleButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1.5,
+    borderColor: '#E2E8F0',
+    paddingVertical: 14,
+    borderRadius: 16,
+    gap: 10,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 3,
+    elevation: 1,
+  },
+  googleButtonText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#1E293B',
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 24,
+  },
+  modalCard: {
+    width: '100%',
+    maxWidth: 400,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 20,
+    padding: 20,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: '800',
+    color: '#0F172A',
+  },
+  modalSub: {
+    fontSize: 13,
+    color: '#64748B',
+    lineHeight: 18,
+    marginBottom: 16,
+  },
+  modalInput: {
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    fontSize: 14,
+    color: '#0F172A',
+    marginBottom: 16,
+  },
+  modalSubmitBtn: {
+    backgroundColor: '#0284C7',
+    paddingVertical: 14,
+    borderRadius: 12,
+    alignItems: 'center',
+  },
+  modalSubmitBtnText: {
+    color: '#FFFFFF',
+    fontWeight: '700',
+    fontSize: 14,
   },
 });
 
