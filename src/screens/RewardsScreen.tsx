@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   View, 
   Text, 
@@ -6,42 +6,62 @@ import {
   FlatList, 
   Image, 
   TouchableOpacity, 
-  Modal 
+  Modal,
+  ActivityIndicator 
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { RewardItem } from '../models/Gamification';
-import { redeemReward, getPawBalance } from '../services/gamificationService';
-import { mockCurrentUser, mockRewards } from '../mock/mockData';
+import { getRewardsFromDb, redeemRewardInDb } from '../services/rewardService';
+import { useAuth } from '../context/AuthContext';
 
 export const RewardsScreen: React.FC = () => {
   const insets = useSafeAreaInsets();
-  const [pawBalance, setPawBalance] = useState(mockCurrentUser.pawBalance);
+  const { currentUser } = useAuth();
+  const [pawBalance, setPawBalance] = useState(currentUser?.pawBalance || 0);
   const [activeTab, setActiveTab] = useState<'comercial' | 'digital'>('comercial');
+  const [rewardsList, setRewardsList] = useState<RewardItem[]>([]);
+  const [loading, setLoading] = useState(false);
 
   const [redeemedCode, setRedeemedCode] = useState<string | null>(null);
   const [redeemedItem, setRedeemedItem] = useState<RewardItem | null>(null);
   const [showCodeModal, setShowCodeModal] = useState(false);
 
+  useEffect(() => {
+    loadRewards();
+  }, [activeTab]);
+
+  useEffect(() => {
+    if (currentUser?.pawBalance !== undefined) {
+      setPawBalance(currentUser.pawBalance);
+    }
+  }, [currentUser?.pawBalance]);
+
+  const loadRewards = async () => {
+    setLoading(true);
+    const data = await getRewardsFromDb(activeTab);
+    setRewardsList(data);
+    setLoading(false);
+  };
+
   const handleRedeem = async (item: RewardItem) => {
     if (pawBalance < item.pawsCost) {
-      alert(`Necesitas ${item.pawsCost} Huellitas. Puedes conseguirlas asistiendo a juntas y completando misiones.`);
+      alert(`Necesitas ${item.pawsCost} Huellitas para este canje. Acumulas puntos asistiendo a juntas y con la Huella Sorpresa.`);
       return;
     }
 
-    const res = await redeemReward(mockCurrentUser.id, item, mockCurrentUser.displayName);
+    const res = await redeemRewardInDb(currentUser.id, item, currentUser.displayName);
 
     if (res.success && res.redemptionCode) {
-      setPawBalance(getPawBalance());
+      setPawBalance(prev => Math.max(0, prev - item.pawsCost));
       setRedeemedCode(res.redemptionCode);
       setRedeemedItem(item);
       setShowCodeModal(true);
+      loadRewards();
     } else {
       alert(res.message);
     }
   };
-
-  const filteredRewards = mockRewards.filter(r => r.type === activeTab);
 
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
@@ -75,36 +95,66 @@ export const RewardsScreen: React.FC = () => {
         </TouchableOpacity>
       </View>
 
-      <FlatList
-        data={filteredRewards}
-        keyExtractor={item => item.id}
-        contentContainerStyle={styles.listContent}
-        renderItem={({ item }) => (
-          <View style={styles.rewardCard}>
-            <Image source={{ uri: item.imageUrl }} style={styles.rewardImage} />
-            <View style={styles.cardBody}>
-              {item.businessName && (
-                <Text style={styles.businessLabel}>🏪 {item.businessName}</Text>
-              )}
-              <Text style={styles.rewardTitle}>{item.title}</Text>
-              <Text style={styles.rewardDesc}>{item.description}</Text>
+      {loading ? (
+        <View style={styles.loadingBox}>
+          <ActivityIndicator size="large" color="#0284C7" />
+          <Text style={styles.loadingText}>Cargando catálogo oficial...</Text>
+        </View>
+      ) : (
+        <FlatList
+          data={rewardsList}
+          keyExtractor={item => item.id}
+          contentContainerStyle={styles.listContent}
+          ListEmptyComponent={
+            <View style={styles.emptyContainer}>
+              <View style={styles.emptyIconCircle}>
+                <Ionicons name="gift-outline" size={48} color="#94A3B8" />
+              </View>
+              <Text style={styles.emptyTitle}>
+                {activeTab === 'comercial' 
+                  ? 'Aún no hay productos publicados por tiendas' 
+                  : 'Aún no hay recompensas digitales'}
+              </Text>
+              <Text style={styles.emptySub}>
+                {activeTab === 'comercial'
+                  ? 'Las tiendas verificadas pueden publicar sus productos y promociones para canje por Huellitas desde su portal.'
+                  : 'Pronto podrás desbloquear marcos especiales y medallas para el Pasaporte de tu perrito.'}
+              </Text>
+            </View>
+          }
+          renderItem={({ item }) => (
+            <View style={styles.rewardCard}>
+              <Image source={{ uri: item.imageUrl }} style={styles.rewardImage} />
+              <View style={styles.cardBody}>
+                {item.businessName && (
+                  <Text style={styles.businessLabel}>🏪 {item.businessName}</Text>
+                )}
+                <Text style={styles.rewardTitle}>{item.title}</Text>
+                <Text style={styles.rewardDesc}>{item.description}</Text>
 
-              <View style={styles.cardFooter}>
-                <View style={styles.costBadge}>
-                  <Ionicons name="paw" size={16} color="#D97706" />
-                  <Text style={styles.costText}>{item.pawsCost} Huellitas</Text>
+                {item.originalPriceCLP ? (
+                  <Text style={styles.priceClpText}>
+                    Valor comercial: ${item.originalPriceCLP.toLocaleString('es-CL')} CLP
+                  </Text>
+                ) : null}
+
+                <View style={styles.cardFooter}>
+                  <View style={styles.costBadge}>
+                    <Ionicons name="paw" size={16} color="#D97706" />
+                    <Text style={styles.costText}>{item.pawsCost} Huellitas</Text>
+                  </View>
+                  <TouchableOpacity 
+                    style={[styles.redeemButton, pawBalance < item.pawsCost && styles.redeemButtonDisabled]}
+                    onPress={() => handleRedeem(item)}
+                  >
+                    <Text style={styles.redeemButtonText}>Canjear</Text>
+                  </TouchableOpacity>
                 </View>
-                <TouchableOpacity 
-                  style={[styles.redeemButton, pawBalance < item.pawsCost && styles.redeemButtonDisabled]}
-                  onPress={() => handleRedeem(item)}
-                >
-                  <Text style={styles.redeemButtonText}>Canjear</Text>
-                </TouchableOpacity>
               </View>
             </View>
-          </View>
-        )}
-      />
+          )}
+        />
+      )}
 
       {/* Modal de Cupón / Código QR para Tiendas (Sección 19 Plan Maestro) */}
       <Modal visible={showCodeModal} transparent animationType="fade">
@@ -342,4 +392,50 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     fontSize: 14,
   },
+  priceClpText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#059669',
+    marginTop: 2,
+    marginBottom: 8,
+  },
+  loadingBox: {
+    paddingVertical: 60,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 12,
+  },
+  loadingText: {
+    fontSize: 13,
+    color: '#64748B',
+  },
+  emptyContainer: {
+    paddingVertical: 50,
+    paddingHorizontal: 30,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  emptyIconCircle: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: '#F1F5F9',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 16,
+  },
+  emptyTitle: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: '#1E293B',
+    textAlign: 'center',
+    marginBottom: 8,
+  },
+  emptySub: {
+    fontSize: 13,
+    color: '#64748B',
+    textAlign: 'center',
+    lineHeight: 18,
+  },
 });
+

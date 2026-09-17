@@ -12,6 +12,8 @@ import { Dog } from '../models/Dog';
 import { Community } from '../models/Community';
 import { DogEvent } from '../models/Event';
 import { Business } from '../models/Business';
+import { RewardItem } from '../models/Gamification';
+import { calculatePawsFromCLP } from './rewardService';
 import { logAuditAction } from './auditService';
 import { SUPER_ADMIN_USER } from '../context/AuthContext';
 
@@ -65,7 +67,9 @@ export const resetEntireApp = async (
       'events', 
       'eventAttendances', 
       'businesses',
-      'redemptions'
+      'rewards',
+      'redemptions',
+      'pawTransactions'
     ];
 
     for (const colName of collectionsToClean) {
@@ -73,7 +77,7 @@ export const resetEntireApp = async (
         const snap = await getDocs(collection(db, colName));
         for (const docSnap of snap.docs) {
           // No borrar el Super Admin supremo
-          if (colName === 'users' && docSnap.id === 'user-superadmin') continue;
+          if (colName === 'users' && docSnap.id === SUPER_ADMIN_USER.id) continue;
           await deleteDoc(doc(db, colName, docSnap.id));
         }
       } catch (err) {
@@ -82,7 +86,7 @@ export const resetEntireApp = async (
     }
 
     // Asegurar que Francisco Juillet persista
-    await setDoc(doc(db, 'users', 'user-superadmin'), cleanUndefined({
+    await setDoc(doc(db, 'users', SUPER_ADMIN_USER.id), cleanUndefined({
       ...SUPER_ADMIN_USER,
       updatedAt: serverTimestamp()
     }));
@@ -335,7 +339,74 @@ export const seedRealisticData = async (
       }));
     }
 
-    // 4. Crear 2 Juntas Oficiales
+    // 4. Crear 4 Productos en la Tienda de Huellitas calculados con la fórmula oficial
+    const rewardsToCreate: RewardItem[] = [
+      {
+        id: 'rew-muffin-cumple',
+        title: 'Muffin de Hígado & Avena para Cumpleaños',
+        description: 'Pastelería canina horneada sin sal ni azúcar. Canjeable en local Guau Gourmet o en junta.',
+        type: 'comercial',
+        originalPriceCLP: 3000,
+        pawsCost: calculatePawsFromCLP(3000), // 200 Huellitas
+        imageUrl: 'https://images.unsplash.com/photo-1541599540903-216a46ca1dc0?w=400',
+        businessId: 'biz-guau-gourmet',
+        businessName: 'Guau Gourmet Pastelería Canina',
+        stockAvailable: 15,
+        status: 'active',
+        createdAt: new Date()
+      },
+      {
+        id: 'rew-arnes-reflectante',
+        title: 'Arnés Antitiros Ergonómico Reflectante',
+        description: 'Tallas S a XL. Reduce la presión en la tráquea durante paseos activos en el parque.',
+        type: 'comercial',
+        originalPriceCLP: 12000,
+        pawsCost: calculatePawsFromCLP(12000), // 800 Huellitas
+        imageUrl: 'https://images.unsplash.com/photo-1601758228041-f3b2795255f1?w=400',
+        businessId: 'biz-perrunos-chic',
+        businessName: 'Perrunos Chic Accesorios',
+        stockAvailable: 5,
+        status: 'active',
+        createdAt: new Date()
+      },
+      {
+        id: 'rew-pack-barf',
+        title: 'Pack 3 Hamburguesas BARF Congeladas (500g)',
+        description: 'Carne magra, hueso carnoso y vegetales. Dieta biológicamente apropiada 100% cruda.',
+        type: 'comercial',
+        originalPriceCLP: 6000,
+        pawsCost: calculatePawsFromCLP(6000), // 400 Huellitas
+        imageUrl: 'https://images.unsplash.com/photo-1583337130417-3346a1be7dee?w=400',
+        businessId: 'biz-natural-pet',
+        businessName: 'Natural Pet Alimentos BARF',
+        stockAvailable: 8,
+        status: 'active',
+        createdAt: new Date()
+      },
+      {
+        id: 'rew-spa-bano',
+        title: 'Sesión Completa de Baño & Deslanado Anti-Estrés',
+        description: 'Baño con shampoo orgánico hipoalergénico, corte de uñas y aromaterapia relajante.',
+        type: 'comercial',
+        originalPriceCLP: 15000,
+        pawsCost: calculatePawsFromCLP(15000), // 1.000 Huellitas
+        imageUrl: 'https://images.unsplash.com/photo-1517849845537-4d257902454a?w=400',
+        businessId: 'biz-spa-canino',
+        businessName: 'Spa Canino Burbujas Felices',
+        stockAvailable: 4,
+        status: 'active',
+        createdAt: new Date()
+      }
+    ];
+
+    for (const rew of rewardsToCreate) {
+      await setDoc(doc(db, 'rewards', rew.id), cleanUndefined({
+        ...rew,
+        createdAt: serverTimestamp()
+      }));
+    }
+
+    // 5. Crear 2 Juntas Oficiales
     const eventsToCreate: DogEvent[] = [
       {
         id: 'event-gran-junta-primavera',
@@ -408,7 +479,7 @@ export const seedRealisticData = async (
 
     return { 
       success: true, 
-      message: `🌱 ¡Base de datos poblada exitosamente! Se crearon 10 usuarios, ${totalDogsCreated} perros, 3 comunidades con sus administradores principales, 4 tiendas verificadas y 2 juntas oficiales.` 
+      message: `🌱 ¡Base de datos poblada exitosamente! Se crearon 10 usuarios, ${totalDogsCreated} perros, 3 comunidades con administradores, 4 tiendas con productos en la Tienda de Huellitas y 2 juntas oficiales.` 
     };
   } catch (err: any) {
     return { success: false, message: 'Error al poblar datos: ' + err.message };

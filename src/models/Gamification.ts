@@ -52,12 +52,15 @@ export interface RewardItem {
   description: string;
   type: RewardType;
   pawsCost: number;
+  originalPriceCLP?: number;
   imageUrl: string;
   businessId?: string;
   businessName?: string;
   stockAvailable?: number;
   expiresAt?: any;
   digitalType?: 'marco' | 'fondo' | 'titulo' | 'sticker';
+  status?: 'active' | 'paused' | 'sold_out';
+  createdAt?: any;
 }
 
 export interface RewardRedemption {

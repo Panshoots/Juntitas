@@ -140,8 +140,8 @@ export const approveCommunityRequest = async (
 export const getCommunities = async (): Promise<Community[]> => {
   try {
     const snap = await getDocs(collection(db, 'communities'));
+    const list: Community[] = [];
     if (!snap.empty) {
-      const list: Community[] = [];
       snap.forEach(d => {
         const data = d.data();
         list.push({
@@ -165,13 +165,13 @@ export const getCommunities = async (): Promise<Community[]> => {
           updatedAt: data.updatedAt?.toDate ? data.updatedAt.toDate() : new Date()
         });
       });
-      localCommunities = list;
-      return list;
     }
+    localCommunities = list;
+    return list;
   } catch (err) {
     console.warn('Leyendo comunidades locales:', err);
+    return [...localCommunities];
   }
-  return [...localCommunities];
 };
 
 export const joinCommunity = async (communityId: string, userId: string): Promise<{ success: boolean; message: string }> => {

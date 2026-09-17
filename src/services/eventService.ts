@@ -17,8 +17,8 @@ let localEvents: DogEvent[] = [];
 export const getEvents = async (communityId?: string): Promise<DogEvent[]> => {
   try {
     const snap = await getDocs(collection(db, 'events'));
+    const list: DogEvent[] = [];
     if (!snap.empty) {
-      const list: DogEvent[] = [];
       snap.forEach(d => {
         const data = d.data();
         list.push({
@@ -48,16 +48,19 @@ export const getEvents = async (communityId?: string): Promise<DogEvent[]> => {
           createdAt: data.createdAt?.toDate ? data.createdAt.toDate() : new Date()
         });
       });
-      localEvents = list;
     }
+    localEvents = list;
+    if (communityId) {
+      return list.filter(e => e.communityId === communityId);
+    }
+    return list;
   } catch (err) {
     console.warn('Leyendo eventos de caché local:', err);
+    if (communityId) {
+      return localEvents.filter(e => e.communityId === communityId);
+    }
+    return [...localEvents];
   }
-
-  if (communityId) {
-    return localEvents.filter(e => e.communityId === communityId);
-  }
-  return [...localEvents];
 };
 
 export const createEvent = async (

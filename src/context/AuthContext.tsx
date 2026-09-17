@@ -26,7 +26,7 @@ export interface ActiveProfileInfo {
 }
 
 export const SUPER_ADMIN_USER: AppUser = {
-  id: 'user-superadmin',
+  id: 'zjnYSghe7oMOd3FPCnMFfpE2Yrb2',
   displayName: 'Francisco Juillet (SuperAdmin)',
   email: 'admin@juntitas.app',
   photoURL: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=400',
