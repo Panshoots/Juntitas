@@ -23,10 +23,14 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
   onBackToOnboarding
 }) => {
   const insets = useSafeAreaInsets();
-  const { registerUser, loginUser } = useAuth();
+  const { registerUser, loginUser, loginAsSuperAdmin } = useAuth();
 
   const [mode, setMode] = useState<'login' | 'register'>(initialMode);
   const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    setMode(initialMode);
+  }, [initialMode]);
 
   // Campos comunes
   const [email, setEmail] = useState('');
@@ -53,7 +57,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
 
   const handleAuthSubmit = async () => {
     if (!email || !password) {
-      alert('Por favor completa tu correo y contraseña.');
+      alert('Por favor completa tu correo y contraseña (ej: admin / admin).');
       return;
     }
 
@@ -62,9 +66,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
     if (mode === 'login') {
       const res = await loginUser(email, password);
       setLoading(false);
-      if (!res.success) {
-        alert(res.message);
-      }
+      alert(res.message);
       return;
     }
 
@@ -336,8 +338,47 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
       {/* Formulario de Login */}
       {mode === 'login' && (
         <View style={styles.formCard}>
+          {/* Tarjeta de Asistencia para el Administrador */}
+          <View style={styles.adminHelpCard}>
+            <View style={styles.adminHelpHeader}>
+              <Ionicons name="shield-checkmark" size={18} color="#DC2626" />
+              <Text style={styles.adminHelpTitle}>Credenciales de Super Administrador</Text>
+            </View>
+            <Text style={styles.adminHelpText}>
+              Usuario: <Text style={styles.codeText}>admin</Text> (o <Text style={styles.codeText}>admin@juntitas.app</Text>){'\n'}
+              Contraseña: <Text style={styles.codeText}>admin</Text>
+            </Text>
+            
+            <View style={styles.adminQuickRow}>
+              <TouchableOpacity 
+                style={styles.autofillBtn}
+                onPress={() => {
+                  setEmail('admin');
+                  setPassword('admin');
+                }}
+              >
+                <Ionicons name="flash" size={14} color="#0284C7" />
+                <Text style={styles.autofillBtnText}>⚡ Autocompletar datos</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity 
+                style={styles.directAdminBtn}
+                onPress={async () => {
+                  setLoading(true);
+                  const res = await loginAsSuperAdmin();
+                  setLoading(false);
+                  alert(res.message);
+                }}
+              >
+                <Ionicons name="shield-checkmark" size={14} color="#FFFFFF" />
+                <Text style={styles.directAdminBtnText}>Entrar como Francisco</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+
+          <Text style={styles.fieldLabel}>Correo o Usuario:</Text>
           <TextInput
-            placeholder="Correo electrónico"
+            placeholder="admin (o tu correo)"
             value={email}
             onChangeText={setEmail}
             keyboardType="email-address"
@@ -345,8 +386,9 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
             style={styles.input}
           />
 
+          <Text style={styles.fieldLabel}>Contraseña:</Text>
           <TextInput
-            placeholder="Contraseña"
+            placeholder="admin (o tu clave)"
             value={password}
             onChangeText={setPassword}
             secureTextEntry
@@ -578,4 +620,81 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: 'bold',
   },
+  adminHelpCard: {
+    backgroundColor: '#FEF2F2',
+    borderColor: '#FECACA',
+    borderWidth: 1,
+    borderRadius: 14,
+    padding: 14,
+    marginBottom: 16,
+  },
+  adminHelpHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: 6,
+  },
+  adminHelpTitle: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#991B1B',
+  },
+  adminHelpText: {
+    fontSize: 12,
+    color: '#7F1D1D',
+    lineHeight: 18,
+    marginBottom: 10,
+  },
+  codeText: {
+    fontFamily: 'monospace',
+    fontWeight: 'bold',
+    color: '#DC2626',
+    backgroundColor: '#FEE2E2',
+    paddingHorizontal: 4,
+    borderRadius: 4,
+  },
+  adminQuickRow: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  autofillBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#E0F2FE',
+    borderColor: '#BAE6FD',
+    borderWidth: 1,
+    paddingVertical: 8,
+    borderRadius: 8,
+    gap: 4,
+  },
+  autofillBtnText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#0369A1',
+  },
+  directAdminBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#DC2626',
+    paddingVertical: 8,
+    borderRadius: 8,
+    gap: 4,
+  },
+  directAdminBtnText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#FFFFFF',
+  },
+  fieldLabel: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#334155',
+    marginBottom: 6,
+    marginTop: 4,
+  },
 });
+

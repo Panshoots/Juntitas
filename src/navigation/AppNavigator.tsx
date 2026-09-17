@@ -14,7 +14,7 @@ import { useAuth } from '../context/AuthContext';
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
 export const AppNavigator: React.FC = () => {
-  const { sessionState, startAuthFlow, backToOnboarding } = useAuth();
+  const { sessionState, authMode, startAuthFlow, backToOnboarding } = useAuth();
 
   if (sessionState === 'onboarding') {
     return (
@@ -28,6 +28,7 @@ export const AppNavigator: React.FC = () => {
   if (sessionState === 'auth') {
     return (
       <AuthScreen 
+        initialMode={authMode}
         onBackToOnboarding={backToOnboarding}
       />
     );

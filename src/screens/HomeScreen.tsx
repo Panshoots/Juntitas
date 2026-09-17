@@ -22,7 +22,7 @@ import { useAuth } from '../context/AuthContext';
 export const HomeScreen: React.FC = () => {
   const navigation = useNavigation<any>();
   const insets = useSafeAreaInsets();
-  const { currentUser } = useAuth();
+  const { currentUser, isSuperAdmin } = useAuth();
 
   const [pawBalance, setPawBalance] = useState(currentUser.pawBalance || 100);
   const [surpriseReward, setSurpriseReward] = useState<SurprisePawReward | null>(null);
@@ -77,6 +77,29 @@ export const HomeScreen: React.FC = () => {
           <Text style={styles.pawsCount}>{pawBalance} 🐾</Text>
         </TouchableOpacity>
       </View>
+
+      {/* Banner de Super Admin para Acceso Inmediato al CRM */}
+      {isSuperAdmin && (
+        <TouchableOpacity 
+          style={styles.adminBanner} 
+          onPress={() => navigation.navigate('AdminOrStore')}
+          activeOpacity={0.88}
+        >
+          <View style={styles.adminBannerLeft}>
+            <View style={styles.adminShieldCircle}>
+              <Ionicons name="shield-checkmark" size={20} color="#EF4444" />
+            </View>
+            <View>
+              <Text style={styles.adminBannerTitle}>Super Admin: Francisco Juillet</Text>
+              <Text style={styles.adminBannerSubtitle}>Toca aquí para abrir el Panel CRM Global</Text>
+            </View>
+          </View>
+          <View style={styles.adminOpenButton}>
+            <Text style={styles.adminOpenText}>Abrir CRM</Text>
+            <Ionicons name="chevron-forward" size={14} color="#EF4444" />
+          </View>
+        </TouchableOpacity>
+      )}
 
       {/* Banner Principal / Pasaporte Perruno */}
       <TouchableOpacity 
@@ -433,4 +456,60 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#D97706',
   },
+  adminBanner: {
+    backgroundColor: '#FEF2F2',
+    borderWidth: 1.5,
+    borderColor: '#FECACA',
+    borderRadius: 16,
+    padding: 14,
+    marginBottom: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    shadowColor: '#EF4444',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 6,
+    elevation: 2,
+  },
+  adminBannerLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    flex: 1,
+  },
+  adminShieldCircle: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#FEE2E2',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  adminBannerTitle: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#991B1B',
+  },
+  adminBannerSubtitle: {
+    fontSize: 11,
+    color: '#B91C1C',
+  },
+  adminOpenButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#FECACA',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 10,
+    gap: 2,
+  },
+  adminOpenText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#DC2626',
+  },
 });
+
