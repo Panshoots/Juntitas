@@ -87,7 +87,33 @@ export const approveCommunityRequest = async (
   requestId: string,
   adminUserId: string
 ): Promise<{ success: boolean; communityId?: string; message: string }> => {
-  const req = localRequests.find(r => r.id === requestId);
+  let req = localRequests.find(r => r.id === requestId);
+  if (!req) {
+    try {
+      const snap = await getDoc(doc(db, 'communityRequests', requestId));
+      if (snap.exists()) {
+        const d = snap.data();
+        req = {
+          id: snap.id,
+          communityName: d.communityName || 'Nueva Comunidad',
+          applicantId: d.applicantId || adminUserId,
+          applicantName: d.applicantName || '',
+          applicantEmail: d.applicantEmail || '',
+          description: d.description || '',
+          instagramHandle: d.instagramHandle || '',
+          verificationEvidenceUrls: d.verificationEvidenceUrls || [],
+          region: d.region || 'Metropolitana',
+          comuna: d.comuna || 'Santiago',
+          approximateSize: d.approximateSize || 50,
+          status: 'pending',
+          createdAt: new Date()
+        };
+      }
+    } catch (e) {
+      console.warn('Error recuperando solicitud de Firestore:', e);
+    }
+  }
+
   const commId = 'comm-' + Date.now();
 
   const newComm: Community = {
@@ -122,8 +148,16 @@ export const approveCommunityRequest = async (
       reviewedBy: adminUserId,
       reviewedAt: serverTimestamp()
     });
+    if (req?.applicantId) {
+      await updateDoc(doc(db, 'users', req.applicantId), {
+        roleType: 'primary_admin',
+        communityIdManaged: commId,
+        communityNameManaged: newComm.name,
+        updatedAt: serverTimestamp()
+      });
+    }
   } catch (err) {
-    console.warn('Aprobando comunidad localmente:', err);
+    console.warn('Aprobando comunidad en Firestore/local:', err);
   }
 
   localCommunities.unshift(newComm);
@@ -137,7 +171,40 @@ export const approveCommunityRequest = async (
     `Comunidad aprobada: ${newComm.name}. Solicitante asignado como Administrador Principal (R-0601, R-0602).`
   );
 
-  return { success: true, communityId: commId, message: `¡Comunidad "${newComm.name}" aprobada exitosamente!` };
+  return { success: true, communityId: commId, message: `¡Comunidad "${newComm.name}" aprobada exitosamente y publicada en la app!` };
+};
+
+export const rejectCommunityRequest = async (
+  requestId: string,
+  adminUserId: string,
+  reason: string = 'Antecedentes no verificables'
+): Promise<{ success: boolean; message: string }> => {
+  try {
+    await updateDoc(doc(db, 'communityRequests', requestId), {
+      status: 'rejected',
+      adminReviewNotes: reason,
+      reviewedBy: adminUserId,
+      reviewedAt: serverTimestamp()
+    });
+  } catch (err) {
+    console.warn('Rechazando comunidad en Firestore/local:', err);
+  }
+
+  const req = localRequests.find(r => r.id === requestId);
+  if (req) {
+    req.status = 'rejected';
+    req.adminReviewNotes = reason;
+  }
+
+  await logAuditAction(
+    adminUserId,
+    'COMMUNITY_REJECT',
+    'communityRequests',
+    requestId,
+    `Solicitud de comunidad rechazada: ${reason}`
+  );
+
+  return { success: true, message: 'Solicitud rechazada.' };
 };
 
 export const getCommunities = async (): Promise<Community[]> => {

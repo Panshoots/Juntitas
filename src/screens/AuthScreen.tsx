@@ -432,7 +432,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
                   setLoading(true);
                   const res = await loginAsSuperAdmin();
                   setLoading(false);
-                  alert(res.message);
+                  showToast(res.message, res.success ? 'success' : 'error');
                 }}
               >
                 <Ionicons name="shield-checkmark" size={14} color="#FFFFFF" />

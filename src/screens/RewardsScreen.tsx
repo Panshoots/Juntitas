@@ -14,10 +14,12 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { RewardItem } from '../models/Gamification';
 import { getRewardsFromDb, redeemRewardInDb } from '../services/rewardService';
 import { useAuth } from '../context/AuthContext';
+import { useToast } from '../context/ToastContext';
 
 export const RewardsScreen: React.FC = () => {
   const insets = useSafeAreaInsets();
   const { currentUser } = useAuth();
+  const { showToast } = useToast();
   const [pawBalance, setPawBalance] = useState(currentUser?.pawBalance || 0);
   const [activeTab, setActiveTab] = useState<'comercial' | 'digital'>('comercial');
   const [rewardsList, setRewardsList] = useState<RewardItem[]>([]);
@@ -46,7 +48,7 @@ export const RewardsScreen: React.FC = () => {
 
   const handleRedeem = async (item: RewardItem) => {
     if (pawBalance < item.pawsCost) {
-      alert(`Necesitas ${item.pawsCost} Huellitas para este canje. Acumulas puntos asistiendo a juntas y con la Huella Sorpresa.`);
+      showToast(`Necesitas ${item.pawsCost} Huellitas para este canje. Acumulas puntos asistiendo a juntas y con la Huella Sorpresa.`, 'warning');
       return;
     }
 
@@ -57,9 +59,10 @@ export const RewardsScreen: React.FC = () => {
       setRedeemedCode(res.redemptionCode);
       setRedeemedItem(item);
       setShowCodeModal(true);
+      showToast(res.message, 'success');
       loadRewards();
     } else {
-      alert(res.message);
+      showToast(res.message, 'error');
     }
   };
 

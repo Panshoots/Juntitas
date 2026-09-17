@@ -25,16 +25,19 @@ import {
 import { 
   getCommunityRequests, 
   approveCommunityRequest, 
+  rejectCommunityRequest,
   getCommunities 
 } from '../services/communityService';
 import { getAuditLogs } from '../services/auditService';
 import { resetEntireApp, seedRealisticData } from '../services/seedService';
+import { useToast } from '../context/ToastContext';
 
 type CrmTab = 'users' | 'communities' | 'businesses' | 'audit';
 
 export const SuperAdminPanelScreen: React.FC = () => {
   const insets = useSafeAreaInsets();
   const { currentUser } = useAuth();
+  const { showToast } = useToast();
 
   const [activeTab, setActiveTab] = useState<CrmTab>('users');
   const [loading, setLoading] = useState(false);
@@ -89,14 +92,14 @@ export const SuperAdminPanelScreen: React.FC = () => {
       'Usuario verificado y habilitado por el Super Admin en el CRM.',
       currentUser.id
     );
-    alert(res.message);
+    showToast(res.message, res.success ? 'success' : 'error');
     loadAllCrmData();
   };
 
   const handleConfirmSuspend = async () => {
     if (!selectedUser) return;
     if (!suspendReason.trim()) {
-      alert('Debes ingresar un motivo de suspensión obligatorio (Regla R-2401).');
+      showToast('Debes ingresar un motivo de suspensión obligatorio (Regla R-2401).', 'warning');
       return;
     }
 
@@ -106,7 +109,7 @@ export const SuperAdminPanelScreen: React.FC = () => {
       suspendReason,
       currentUser.id
     );
-    alert(res.message);
+    showToast(res.message, res.success ? 'success' : 'error');
     setShowSuspendModal(false);
     setSuspendReason('');
     loadAllCrmData();
@@ -115,7 +118,7 @@ export const SuperAdminPanelScreen: React.FC = () => {
   const handleConfirmRoleChange = async () => {
     if (!selectedUser) return;
     const res = await updateUserRoleInDb(selectedUser.id, selectedNewRole, currentUser.id);
-    alert(res.message);
+    showToast(res.message, res.success ? 'success' : 'error');
     setShowRoleModal(false);
     loadAllCrmData();
   };
@@ -131,14 +134,20 @@ export const SuperAdminPanelScreen: React.FC = () => {
       },
       currentUser.id
     );
-    alert(res.message);
+    showToast(res.message, res.success ? 'success' : 'error');
     setShowEditUserModal(false);
     loadAllCrmData();
   };
 
   const handleApproveCommunity = async (reqId: string) => {
     const res = await approveCommunityRequest(reqId, currentUser.id);
-    alert(res.message);
+    showToast(res.message, res.success ? 'success' : 'error');
+    loadAllCrmData();
+  };
+
+  const handleRejectCommunity = async (reqId: string) => {
+    const res = await rejectCommunityRequest(reqId, currentUser.id);
+    showToast(res.message, res.success ? 'warning' : 'error');
     loadAllCrmData();
   };
 
@@ -149,7 +158,7 @@ export const SuperAdminPanelScreen: React.FC = () => {
     setLoading(true);
     const res = await resetEntireApp(currentUser.id);
     setLoading(false);
-    alert(res.message);
+    showToast(res.message, res.success ? 'success' : 'error');
     loadAllCrmData();
   };
 
@@ -157,7 +166,7 @@ export const SuperAdminPanelScreen: React.FC = () => {
     setLoading(true);
     const res = await seedRealisticData(currentUser.id);
     setLoading(false);
-    alert(res.message);
+    showToast(res.message, res.success ? 'success' : 'error');
     loadAllCrmData();
   };
 
@@ -409,13 +418,23 @@ export const SuperAdminPanelScreen: React.FC = () => {
                 <Text style={styles.reqMeta}>Instagram: {req.instagramHandle} • 📍 {req.comuna}</Text>
                 <Text style={styles.reqDesc}>{req.description}</Text>
 
-                <TouchableOpacity 
-                  style={styles.approveReqBtn} 
-                  onPress={() => handleApproveCommunity(req.id)}
-                >
-                  <Ionicons name="checkmark-circle" size={16} color="#FFFFFF" />
-                  <Text style={styles.approveReqBtnText}>Aprobar & Nombrar Admin Principal</Text>
-                </TouchableOpacity>
+                <View style={{ flexDirection: 'row', gap: 10, marginTop: 8 }}>
+                  <TouchableOpacity 
+                    style={[styles.approveReqBtn, { flex: 1 }]} 
+                    onPress={() => handleApproveCommunity(req.id)}
+                  >
+                    <Ionicons name="checkmark-circle" size={16} color="#FFFFFF" />
+                    <Text style={styles.approveReqBtnText}>Aprobar & Activar</Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity 
+                    style={[styles.rejectReqBtn, { flex: 1 }]} 
+                    onPress={() => handleRejectCommunity(req.id)}
+                  >
+                    <Ionicons name="close-circle" size={16} color="#DC2626" />
+                    <Text style={styles.rejectReqBtnText}>Rechazar</Text>
+                  </TouchableOpacity>
+                </View>
               </View>
             ))
           )}
@@ -869,6 +888,22 @@ const styles = StyleSheet.create({
   },
   approveReqBtnText: {
     color: '#FFFFFF',
+    fontWeight: '700',
+    fontSize: 12,
+  },
+  rejectReqBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#FEF2F2',
+    borderWidth: 1.5,
+    borderColor: '#FECACA',
+    paddingVertical: 10,
+    borderRadius: 10,
+    gap: 6,
+  },
+  rejectReqBtnText: {
+    color: '#DC2626',
     fontWeight: '700',
     fontSize: 12,
   },

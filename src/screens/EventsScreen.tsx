@@ -14,10 +14,12 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { DogEvent, EventStatus } from '../models/Event';
 import { getEvents, registerForEvent, openGoogleMapsUrl, createEvent } from '../services/eventService';
 import { useAuth } from '../context/AuthContext';
+import { useToast } from '../context/ToastContext';
 
 export const EventsScreen: React.FC = () => {
   const insets = useSafeAreaInsets();
   const { activeProfile, currentUser, currentDogs, isSuperAdmin, canCreateEventFor } = useAuth();
+  const { showToast } = useToast();
   const [events, setEvents] = useState<DogEvent[]>([]);
   const [selectedEvent, setSelectedEvent] = useState<DogEvent | null>(null);
   const [showRegisterModal, setShowRegisterModal] = useState(false);
@@ -70,7 +72,7 @@ export const EventsScreen: React.FC = () => {
       }));
 
     if (selected.length === 0) {
-      alert('Debes seleccionar al menos un perrito que asistirá a la junta.');
+      showToast('Debes seleccionar al menos un perrito que asistirá a la junta.', 'warning');
       return;
     }
 
@@ -83,7 +85,7 @@ export const EventsScreen: React.FC = () => {
       selected
     );
 
-    alert(res.message);
+    showToast(res.message, res.success ? 'success' : 'error');
     if (res.success) {
       setShowRegisterModal(false);
       loadEvents();
@@ -92,7 +94,7 @@ export const EventsScreen: React.FC = () => {
 
   const handleCreateNewEvent = async () => {
     if (!newTitle || !newPlace || !newAddress) {
-      alert('Por favor completa el título, lugar y dirección.');
+      showToast('Por favor completa el título, lugar y dirección.', 'warning');
       return;
     }
 
@@ -116,7 +118,7 @@ export const EventsScreen: React.FC = () => {
       acceptsBusinesses: newAcceptsBusinesses,
     });
 
-    alert(res.message);
+    showToast(res.message, res.success ? 'success' : 'error');
     if (res.success) {
       setShowCreateEventModal(false);
       setNewTitle('');

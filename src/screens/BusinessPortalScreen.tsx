@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   View, 
   Text, 
@@ -22,10 +22,12 @@ import {
   getRewardsFromDb, 
   CLP_PER_PAW 
 } from '../services/rewardService';
+import { useToast } from '../context/ToastContext';
 
 export const BusinessPortalScreen: React.FC = () => {
   const insets = useSafeAreaInsets();
   const { currentUser, isSuperAdmin } = useAuth();
+  const { showToast } = useToast();
 
   const [businesses, setBusinesses] = useState<Business[]>([]);
   const [selectedBiz, setSelectedBiz] = useState<Business | null>(null);
@@ -80,11 +82,11 @@ export const BusinessPortalScreen: React.FC = () => {
 
   const handlePublishReward = async () => {
     if (!selectedBiz) {
-      alert('Debes tener un comercio seleccionado.');
+      showToast('Debes tener un comercio seleccionado.', 'warning');
       return;
     }
     if (!productTitle.trim() || !productDesc.trim() || rawPrice <= 0) {
-      alert('Por favor completa el nombre del producto, descripción y precio en pesos CLP.');
+      showToast('Por favor completa el nombre del producto, descripción y precio en pesos CLP.', 'warning');
       return;
     }
 
@@ -100,7 +102,7 @@ export const BusinessPortalScreen: React.FC = () => {
     });
     setPublishing(false);
 
-    alert(res.message);
+    showToast(res.message, res.success ? 'success' : 'error');
     if (res.success) {
       setProductTitle('');
       setProductDesc('');
@@ -113,13 +115,14 @@ export const BusinessPortalScreen: React.FC = () => {
   const handleValidateCoupon = async () => {
     const cleanCode = couponCodeInput.trim().toUpperCase();
     if (!cleanCode) {
-      alert('Ingresa el código de 6 caracteres del cupón presentado por el tutor.');
+      showToast('Ingresa el código de 6 caracteres del cupón presentado por el tutor.', 'warning');
       return;
     }
 
     setValidating(true);
     const res = await validateCouponCode(cleanCode, currentUser.id);
     setValidating(false);
+    showToast(res.message, res.success ? 'success' : 'error');
     setValidationResult(res.message);
     setCouponCodeInput('');
   };

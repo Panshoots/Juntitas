@@ -149,26 +149,6 @@ export const CommunitiesScreen: React.FC = () => {
       return;
     }
 
-    if (isSuperAdmin) {
-      const res = await createOfficialCommunity({
-        name: reqName,
-        description: reqDesc,
-        instagramHandle: reqInstagram,
-        region: selectedRegionName,
-        comuna: reqComuna,
-        primaryAdminId: currentUser.id
-      });
-      showToast(res.message, res.success ? 'success' : 'error');
-      if (res.success) {
-        setShowRequestModal(false);
-        setReqName('');
-        setReqDesc('');
-        setReqInstagram('');
-        loadCommunities();
-      }
-      return;
-    }
-
     const res = await submitCommunityRequest({
       communityName: reqName,
       applicantId: currentUser.id,
@@ -183,7 +163,11 @@ export const CommunitiesScreen: React.FC = () => {
     });
 
     if (res.success) {
-      showToast('¡Solicitud enviada a revisión oficial! Un Super Administrador revisará los antecedentes.', 'success');
+      showToast(
+        '¡Solicitud enviada al CRM! El Super Admin debe revisarla y aprobarla desde su Panel de Control para que se publique.',
+        'success',
+        'Solicitud en Espera'
+      );
       setShowRequestModal(false);
       setReqName('');
       setReqDesc('');
@@ -432,18 +416,14 @@ export const CommunitiesScreen: React.FC = () => {
         <View style={styles.modalOverlay}>
           <View style={styles.modalCard}>
             <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>
-                {isSuperAdmin ? '👑 Crear Comunidad Oficial' : 'Solicitar Comunidad Oficial'}
-              </Text>
+              <Text style={styles.modalTitle}>🐶 Solicitar Fundación de Comunidad</Text>
               <TouchableOpacity onPress={() => setShowRequestModal(false)}>
                 <Ionicons name="close" size={24} color="#64748B" />
               </TouchableOpacity>
             </View>
 
             <Text style={styles.modalIntro}>
-              {isSuperAdmin 
-                ? 'Como Super Administrador Supremo, la comunidad quedará activa, verificada y publicada de inmediato.' 
-                : 'Para evitar comunidades duplicadas y mantener la confianza de los tutores, un Super Administrador revisará los antecedentes.'}
+              Toda comunidad oficial debe ser revisada y aprobada por el Super Administrador en el Panel de Control (CRM) antes de ser visible y publicada en la app.
             </Text>
 
             <TextInput
@@ -498,11 +478,11 @@ export const CommunitiesScreen: React.FC = () => {
             />
 
             <TouchableOpacity 
-              style={[styles.submitReqButton, isSuperAdmin && { backgroundColor: '#DC2626' }]} 
+              style={styles.submitReqButton} 
               onPress={handleSendRequest}
             >
               <Text style={styles.submitReqButtonText}>
-                {isSuperAdmin ? '🚀 Publicar Comunidad Inmediatamente' : 'Enviar Solicitud a Verificación'}
+                Enviar Solicitud al Super Admin (CRM)
               </Text>
             </TouchableOpacity>
           </View>
