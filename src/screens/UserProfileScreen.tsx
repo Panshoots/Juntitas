@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   View, 
   Text, 
@@ -18,6 +18,8 @@ import { useAuth } from '../context/AuthContext';
 import { DEFAULT_DOG_PHOTOS, MAX_DOGS_STANDARD_PLAN } from '../services/dogService';
 import { getUserRedemptions } from '../services/rewardService';
 import { RewardRedemption } from '../models/Gamification';
+import { getDogBreeds, DogBreed, MASTER_DOG_BREEDS } from '../services/breedService';
+import { takePhoto, pickFromGallery } from '../services/imagePickerService';
 
 interface OfficialBadgeInfo {
   id: string;
@@ -98,11 +100,20 @@ const ALL_OFFICIAL_BADGES: OfficialBadgeInfo[] = [
 export const UserProfileScreen: React.FC = () => {
   const insets = useSafeAreaInsets();
   const navigation = useNavigation<any>();
-  const { activeProfile, currentUser, currentDogs, addDogToUser, isSuperAdmin, isBusinessOwner, logout } = useAuth();
+  const { activeProfile, currentUser, currentDogs, addDogToUser, updateUserPhoto, isSuperAdmin, isBusinessOwner, logout } = useAuth();
 
   const [showDogsPublic, setShowDogsPublic] = useState(true);
   const [showCommunitiesPublic, setShowCommunitiesPublic] = useState(true);
   const [showAttendancePublic, setShowAttendancePublic] = useState(true);
+
+  // Estados para foto de perfil de usuario
+  const [showAvatarPickerModal, setShowAvatarPickerModal] = useState(false);
+  const [updatingAvatar, setUpdatingAvatar] = useState(false);
+
+  // Estados para razas estandarizadas de perros
+  const [availableBreeds, setAvailableBreeds] = useState<DogBreed[]>(MASTER_DOG_BREEDS);
+  const [breedSearchQuery, setBreedSearchQuery] = useState('');
+  const [showBreedPickerModal, setShowBreedPickerModal] = useState(false);
 
   // Modal para registrar nuevo perrito
   const [showAddDogModal, setShowAddDogModal] = useState(false);
@@ -111,6 +122,7 @@ export const UserProfileScreen: React.FC = () => {
   const [newDogSize, setNewDogSize] = useState<'toy' | 'pequeño' | 'mediano' | 'grande' | 'gigante'>('mediano');
   const [newDogGender, setNewDogGender] = useState<'macho' | 'hembra'>('macho');
   const [selectedPhotoIndex, setSelectedPhotoIndex] = useState(0);
+  const [customDogPhoto, setCustomDogPhoto] = useState<string | null>(null);
   const [savingDog, setSavingDog] = useState(false);
 
   // Canjes de usuario
@@ -122,24 +134,93 @@ export const UserProfileScreen: React.FC = () => {
     }
   }, [currentUser?.id]);
 
+  useEffect(() => {
+    // Cargar razas de la base de datos Firestore / catálogo local
+    getDogBreeds().then(breeds => {
+      if (breeds && breeds.length > 0) {
+        setAvailableBreeds(breeds);
+      }
+    }).catch(err => console.warn('Error cargando razas:', err));
+  }, []);
+
   const loadRedemptions = async () => {
     const list = await getUserRedemptions(currentUser.id);
     setUserRedemptions(list);
   };
 
+  // Manejadores de foto de perfil de usuario
+  const handleTakeAvatarPhoto = async () => {
+    setShowAvatarPickerModal(false);
+    setUpdatingAvatar(true);
+    const res = await takePhoto();
+    if (res.success && res.uri) {
+      const updateRes = await updateUserPhoto(res.uri);
+      alert(updateRes.message);
+    } else if (res.error) {
+      alert(res.error);
+    }
+    setUpdatingAvatar(false);
+  };
+
+  const handlePickAvatarGallery = async () => {
+    setShowAvatarPickerModal(false);
+    setUpdatingAvatar(true);
+    const res = await pickFromGallery();
+    if (res.success && res.uri) {
+      const updateRes = await updateUserPhoto(res.uri);
+      alert(updateRes.message);
+    } else if (res.error) {
+      alert(res.error);
+    }
+    setUpdatingAvatar(false);
+  };
+
+  // Manejadores de fotos del perrito
+  const handleTakeDogPhoto = async () => {
+    const res = await takePhoto();
+    if (res.success && res.uri) {
+      setCustomDogPhoto(res.uri);
+    } else if (res.error) {
+      alert(res.error);
+    }
+  };
+
+  const handlePickDogPhotoGallery = async () => {
+    const res = await pickFromGallery();
+    if (res.success && res.uri) {
+      setCustomDogPhoto(res.uri);
+    } else if (res.error) {
+      alert(res.error);
+    }
+  };
+
+  // Selección de raza predefinida
+  const handleSelectBreed = (b: DogBreed) => {
+    setNewDogBreed(b.name);
+    setNewDogSize(b.size);
+    setShowBreedPickerModal(false);
+    setBreedSearchQuery('');
+  };
+
+  const filteredBreeds = availableBreeds.filter(b => 
+    b.name.toLowerCase().includes(breedSearchQuery.toLowerCase()) ||
+    b.category.toLowerCase().includes(breedSearchQuery.toLowerCase())
+  );
+
   const handleRegisterDog = async () => {
     if (!newDogName.trim() || !newDogBreed.trim()) {
-      alert('Por favor ingresa el nombre y la raza de tu perrito.');
+      alert('Por favor ingresa el nombre y selecciona la raza de tu perrito.');
       return;
     }
 
     setSavingDog(true);
+    const photoToSave = customDogPhoto || DEFAULT_DOG_PHOTOS[selectedPhotoIndex];
     const res = await addDogToUser({
       name: newDogName.trim(),
       breed: newDogBreed.trim(),
       size: newDogSize,
       gender: newDogGender,
-      photoUrl: DEFAULT_DOG_PHOTOS[selectedPhotoIndex]
+      photoUrl: photoToSave
     });
     setSavingDog(false);
 
@@ -148,6 +229,7 @@ export const UserProfileScreen: React.FC = () => {
       setShowAddDogModal(false);
       setNewDogName('');
       setNewDogBreed('');
+      setCustomDogPhoto(null);
     }
   };
 
@@ -179,10 +261,19 @@ export const UserProfileScreen: React.FC = () => {
     <ScrollView style={[styles.container, { paddingTop: insets.top }]} showsVerticalScrollIndicator={false}>
       {/* Cabecera de Perfil */}
       <View style={styles.header}>
-        <Image 
-          source={{ uri: currentUser.photoURL || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=300' }} 
-          style={styles.avatar} 
-        />
+        <View style={styles.avatarContainer}>
+          <Image 
+            source={{ uri: currentUser.photoURL || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=300' }} 
+            style={styles.avatar} 
+          />
+          <TouchableOpacity 
+            style={styles.avatarEditBadge}
+            onPress={() => setShowAvatarPickerModal(true)}
+            activeOpacity={0.8}
+          >
+            <Ionicons name="camera" size={15} color="#FFFFFF" />
+          </TouchableOpacity>
+        </View>
         <Text style={styles.userName}>{currentUser.displayName}</Text>
         <Text style={styles.userLocation}>📍 {currentUser.location?.comuna || 'Santiago'}, {currentUser.location?.region || 'Metropolitana'}</Text>
         <Text style={styles.userEmail}>{currentUser.email}</Text>
@@ -235,8 +326,8 @@ export const UserProfileScreen: React.FC = () => {
       {/* Mis Perritos Registrados (Plan Estándar: Máximo 2) */}
       <View style={styles.section}>
         <View style={styles.sectionHeaderRow}>
-          <View>
-            <Text style={styles.sectionTitle}>
+          <View style={{ flex: 1, paddingRight: 8 }}>
+            <Text style={styles.sectionTitle} numberOfLines={1}>
               🐶 Mis Perritos Registrados ({currentDogs.length}/{MAX_DOGS_STANDARD_PLAN})
             </Text>
             <Text style={styles.sectionSubtitle}>Plan Estándar: Hasta 2 perritos</Text>
@@ -453,13 +544,20 @@ export const UserProfileScreen: React.FC = () => {
               style={styles.modalInput}
             />
 
-            <Text style={styles.modalInputLabel}>Raza:</Text>
-            <TextInput
-              placeholder="ej: Golden Retriever, Pug, Mestizo"
-              value={newDogBreed}
-              onChangeText={setNewDogBreed}
-              style={styles.modalInput}
-            />
+            <Text style={styles.modalInputLabel}>Raza (Estandarizada en BD):</Text>
+            <TouchableOpacity 
+              style={styles.breedSelectorBtn}
+              onPress={() => setShowBreedPickerModal(true)}
+            >
+              <Ionicons name="search" size={18} color="#0284C7" style={{ marginRight: 8 }} />
+              <View style={{ flex: 1 }}>
+                <Text style={newDogBreed ? styles.breedSelectorTextSelected : styles.breedSelectorTextPlaceholder} numberOfLines={1}>
+                  {newDogBreed ? `${newDogBreed}` : 'Buscar o seleccionar del catálogo...'}
+                </Text>
+              </View>
+              <Ionicons name="chevron-forward" size={18} color="#94A3B8" />
+            </TouchableOpacity>
+            <Text style={styles.breedAutoNotice}>💡 Al elegir una raza se sugiere automáticamente su tamaño típico.</Text>
 
             <Text style={styles.modalInputLabel}>Género:</Text>
             <View style={styles.choiceRow}>
@@ -478,7 +576,7 @@ export const UserProfileScreen: React.FC = () => {
 
             <Text style={styles.modalInputLabel}>Tamaño:</Text>
             <View style={styles.choiceRow}>
-              {(['toy', 'pequeño', 'mediano', 'grande'] as const).map(s => (
+              {(['toy', 'pequeño', 'mediano', 'grande', 'gigante'] as const).map(s => (
                 <TouchableOpacity
                   key={s}
                   style={[styles.choiceBtn, newDogSize === s && styles.choiceBtnActive]}
@@ -492,17 +590,43 @@ export const UserProfileScreen: React.FC = () => {
             </View>
 
             <Text style={styles.modalInputLabel}>Foto de perfil del perrito:</Text>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.photoPickerRow}>
-              {DEFAULT_DOG_PHOTOS.map((url, idx) => (
-                <TouchableOpacity 
-                  key={idx}
-                  onPress={() => setSelectedPhotoIndex(idx)}
-                  style={[styles.photoOption, selectedPhotoIndex === idx && styles.photoOptionActive]}
-                >
-                  <Image source={{ uri: url }} style={styles.photoThumb} />
-                </TouchableOpacity>
-              ))}
-            </ScrollView>
+            <View style={styles.photoActionRow}>
+              <TouchableOpacity style={styles.photoActionButton} onPress={handleTakeDogPhoto}>
+                <Ionicons name="camera" size={18} color="#0284C7" />
+                <Text style={styles.photoActionText}>Tomar Foto</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.photoActionButton} onPress={handlePickDogPhotoGallery}>
+                <Ionicons name="images" size={18} color="#0284C7" />
+                <Text style={styles.photoActionText}>De Galería</Text>
+              </TouchableOpacity>
+            </View>
+
+            {customDogPhoto ? (
+              <View style={styles.customPhotoPreviewCard}>
+                <Image source={{ uri: customDogPhoto }} style={styles.customPhotoThumb} />
+                <View style={{ flex: 1, marginLeft: 12 }}>
+                  <Text style={styles.customPhotoSuccessText}>✓ Foto seleccionada con éxito</Text>
+                  <TouchableOpacity onPress={() => setCustomDogPhoto(null)} style={{ marginTop: 4 }}>
+                    <Text style={styles.removePhotoText}>Cambiar / Usar plantilla</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            ) : (
+              <View>
+                <Text style={styles.avatarChoiceLabel}>O elige una plantilla ilustrada:</Text>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.photoPickerRow}>
+                  {DEFAULT_DOG_PHOTOS.map((url, idx) => (
+                    <TouchableOpacity 
+                      key={idx}
+                      onPress={() => setSelectedPhotoIndex(idx)}
+                      style={[styles.photoOption, selectedPhotoIndex === idx && styles.photoOptionActive]}
+                    >
+                      <Image source={{ uri: url }} style={styles.photoThumb} />
+                    </TouchableOpacity>
+                  ))}
+                </ScrollView>
+              </View>
+            )}
 
             <TouchableOpacity 
               style={[styles.saveDogBtn, savingDog && { opacity: 0.6 }]}
@@ -513,6 +637,133 @@ export const UserProfileScreen: React.FC = () => {
                 {savingDog ? 'Guardando en Firebase...' : 'Guardar y Obtener Pasaporte (+50 🐾)'}
               </Text>
             </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Modal para Editar Foto de Perfil de Usuario */}
+      <Modal visible={showAvatarPickerModal} transparent animationType="fade">
+        <View style={styles.modalOverlay}>
+          <View style={styles.actionModalCard}>
+            <Text style={styles.actionModalTitle}>📸 Cambiar Foto de Perfil</Text>
+            <Text style={styles.actionModalSub}>Selecciona cómo deseas actualizar tu avatar:</Text>
+
+            <TouchableOpacity 
+              style={styles.actionOptionBtn} 
+              onPress={handleTakeAvatarPhoto}
+              disabled={updatingAvatar}
+            >
+              <View style={[styles.actionOptionIcon, { backgroundColor: '#EFF6FF' }]}>
+                <Ionicons name="camera" size={22} color="#0284C7" />
+              </View>
+              <View style={{ flex: 1, marginLeft: 12 }}>
+                <Text style={styles.actionOptionText}>Tomar Foto con Cámara</Text>
+                <Text style={styles.actionOptionSub}>Abre la cámara de tu dispositivo</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={18} color="#94A3B8" />
+            </TouchableOpacity>
+
+            <TouchableOpacity 
+              style={styles.actionOptionBtn} 
+              onPress={handlePickAvatarGallery}
+              disabled={updatingAvatar}
+            >
+              <View style={[styles.actionOptionIcon, { backgroundColor: '#F5F3FF' }]}>
+                <Ionicons name="images" size={22} color="#7C3AED" />
+              </View>
+              <View style={{ flex: 1, marginLeft: 12 }}>
+                <Text style={styles.actionOptionText}>Seleccionar de Galería / Archivos</Text>
+                <Text style={styles.actionOptionSub}>Sube una imagen desde tu dispositivo</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={18} color="#94A3B8" />
+            </TouchableOpacity>
+
+            <TouchableOpacity 
+              style={styles.actionCancelBtn} 
+              onPress={() => setShowAvatarPickerModal(false)}
+            >
+              <Text style={styles.actionCancelText}>Cancelar</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Modal Buscador de Razas Estandarizadas */}
+      <Modal visible={showBreedPickerModal} transparent animationType="slide">
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalCard, { maxHeight: '85%' }]}>
+            <View style={styles.modalHeader}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.modalTitle}>🐶 Catálogo Oficial de Razas</Text>
+                <Text style={styles.modalSub}>Estandarizado en BD sin consumir APIs externas</Text>
+              </View>
+              <TouchableOpacity onPress={() => setShowBreedPickerModal(false)}>
+                <Ionicons name="close" size={24} color="#64748B" />
+              </TouchableOpacity>
+            </View>
+
+            {/* Barra de búsqueda de razas */}
+            <View style={styles.breedSearchBar}>
+              <Ionicons name="search" size={18} color="#64748B" />
+              <TextInput
+                placeholder="Escribe raza (ej: Golden, Quiltro, Pug)..."
+                value={breedSearchQuery}
+                onChangeText={setBreedSearchQuery}
+                style={styles.breedSearchInput}
+                autoFocus
+              />
+              {breedSearchQuery.length > 0 && (
+                <TouchableOpacity onPress={() => setBreedSearchQuery('')}>
+                  <Ionicons name="close-circle" size={18} color="#94A3B8" />
+                </TouchableOpacity>
+              )}
+            </View>
+
+            {/* Lista deslizable de razas */}
+            <ScrollView style={styles.breedsListScroll} showsVerticalScrollIndicator={true}>
+              {filteredBreeds.length === 0 ? (
+                <View style={styles.emptyBreedsContainer}>
+                  <Text style={styles.emptyBreedsText}>No encontramos una coincidencia exacta.</Text>
+                  <TouchableOpacity 
+                    style={styles.customBreedUseBtn}
+                    onPress={() => {
+                      setNewDogBreed(breedSearchQuery);
+                      setShowBreedPickerModal(false);
+                    }}
+                  >
+                    <Text style={styles.customBreedUseBtnText}>
+                      Usar "{breedSearchQuery}" como raza personalizada
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              ) : (
+                filteredBreeds.map((item) => (
+                  <TouchableOpacity 
+                    key={item.id}
+                    style={[
+                      styles.breedItemRow,
+                      newDogBreed === item.name && styles.breedItemRowActive
+                    ]}
+                    onPress={() => handleSelectBreed(item)}
+                  >
+                    <View style={{ flex: 1 }}>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                        <Text style={styles.breedItemName}>{item.name}</Text>
+                        {item.popular && (
+                          <View style={styles.popularTag}>
+                            <Text style={styles.popularTagText}>Popular</Text>
+                          </View>
+                        )}
+                      </View>
+                      <Text style={styles.breedItemMeta}>{item.category} • Tamaño típico: {item.size}</Text>
+                    </View>
+                    <View style={styles.sizePill}>
+                      <Text style={styles.sizePillText}>{item.size.toUpperCase()}</Text>
+                    </View>
+                  </TouchableOpacity>
+                ))
+              )}
+            </ScrollView>
           </View>
         </View>
       </Modal>
@@ -532,12 +783,29 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: '#E2E8F0',
   },
-  avatar: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
+  avatarContainer: {
+    position: 'relative',
     marginBottom: 10,
+  },
+  avatar: {
+    width: 84,
+    height: 84,
+    borderRadius: 42,
     backgroundColor: '#E2E8F0',
+  },
+  avatarEditBadge: {
+    position: 'absolute',
+    bottom: 0,
+    right: 0,
+    backgroundColor: '#0284C7',
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: '#FFFFFF',
+    elevation: 3,
   },
   userName: {
     fontSize: 20,
@@ -1035,5 +1303,225 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontWeight: '700',
     fontSize: 14,
+  },
+  breedSelectorBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F0F9FF',
+    borderWidth: 1.5,
+    borderColor: '#BAE6FD',
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 11,
+    marginBottom: 4,
+  },
+  breedSelectorTextSelected: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#0369A1',
+  },
+  breedSelectorTextPlaceholder: {
+    fontSize: 13,
+    color: '#64748B',
+  },
+  breedAutoNotice: {
+    fontSize: 11,
+    color: '#0369A1',
+    marginBottom: 8,
+  },
+  photoActionRow: {
+    flexDirection: 'row',
+    gap: 10,
+    marginBottom: 10,
+  },
+  photoActionButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#F0F9FF',
+    borderWidth: 1.5,
+    borderColor: '#BAE6FD',
+    borderRadius: 12,
+    paddingVertical: 10,
+    gap: 6,
+  },
+  photoActionText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#0284C7',
+  },
+  customPhotoPreviewCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    borderRadius: 12,
+    padding: 10,
+    marginBottom: 14,
+  },
+  customPhotoThumb: {
+    width: 60,
+    height: 60,
+    borderRadius: 12,
+    backgroundColor: '#E2E8F0',
+  },
+  customPhotoSuccessText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#059669',
+  },
+  removePhotoText: {
+    fontSize: 12,
+    color: '#DC2626',
+    fontWeight: '600',
+  },
+  avatarChoiceLabel: {
+    fontSize: 11,
+    color: '#64748B',
+    marginBottom: 6,
+  },
+  actionModalCard: {
+    width: '100%',
+    maxWidth: 360,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 22,
+    padding: 20,
+    shadowColor: '#000',
+    shadowOpacity: 0.15,
+    shadowRadius: 10,
+    elevation: 8,
+  },
+  actionModalTitle: {
+    fontSize: 17,
+    fontWeight: '800',
+    color: '#0F172A',
+    marginBottom: 4,
+  },
+  actionModalSub: {
+    fontSize: 12,
+    color: '#64748B',
+    marginBottom: 16,
+  },
+  actionOptionBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 12,
+    borderRadius: 14,
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1,
+    borderColor: '#F1F5F9',
+    marginBottom: 10,
+  },
+  actionOptionIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  actionOptionText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#1E293B',
+  },
+  actionOptionSub: {
+    fontSize: 11,
+    color: '#64748B',
+    marginTop: 2,
+  },
+  actionCancelBtn: {
+    alignItems: 'center',
+    paddingVertical: 12,
+    marginTop: 4,
+  },
+  actionCancelText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#94A3B8',
+  },
+  breedSearchBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F1F5F9',
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    marginBottom: 12,
+    gap: 8,
+  },
+  breedSearchInput: {
+    flex: 1,
+    fontSize: 14,
+    color: '#0F172A',
+  },
+  breedsListScroll: {
+    maxHeight: 320,
+  },
+  breedItemRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 11,
+    paddingHorizontal: 12,
+    borderRadius: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F1F5F9',
+  },
+  breedItemRowActive: {
+    backgroundColor: '#F0F9FF',
+  },
+  breedItemName: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#1E293B',
+  },
+  breedItemMeta: {
+    fontSize: 11,
+    color: '#64748B',
+    marginTop: 2,
+  },
+  popularTag: {
+    backgroundColor: '#FEF3C7',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
+  },
+  popularTagText: {
+    fontSize: 9,
+    fontWeight: '700',
+    color: '#B45309',
+  },
+  sizePill: {
+    backgroundColor: '#F1F5F9',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+  },
+  sizePillText: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#475569',
+  },
+  emptyBreedsContainer: {
+    padding: 20,
+    alignItems: 'center',
+  },
+  emptyBreedsText: {
+    fontSize: 13,
+    color: '#64748B',
+    marginBottom: 10,
+  },
+  customBreedUseBtn: {
+    backgroundColor: '#0284C7',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 10,
+  },
+  customBreedUseBtnText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '700',
   },
 });

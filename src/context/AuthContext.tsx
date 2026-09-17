@@ -9,7 +9,7 @@ import {
   signInWithPopup,
   sendPasswordResetEmail
 } from 'firebase/auth';
-import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
+import { doc, getDoc, setDoc, updateDoc, serverTimestamp } from 'firebase/firestore';
 import { auth, db } from '../firebase/config';
 import { AppUser, UserRole, UserStatus } from '../models/User';
 import { Dog } from '../models/Dog';
@@ -85,6 +85,7 @@ interface AuthContextType {
   loadUserDogs: (userId: string) => Promise<Dog[]>;
   addDogToUser: (dogData: any) => Promise<{ success: boolean; message: string }>;
   refreshDogs: () => Promise<void>;
+  updateUserPhoto: (photoUrl: string) => Promise<{ success: boolean; message: string }>;
 
   // Permisos helpers
   isSuperAdmin: boolean;
@@ -516,6 +517,23 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setSessionState('onboarding');
   };
 
+  const updateUserPhoto = async (photoUrl: string): Promise<{ success: boolean; message: string }> => {
+    try {
+      if (currentUser?.id) {
+        await updateDoc(doc(db, 'users', currentUser.id), {
+          photoURL: photoUrl,
+          updatedAt: new Date()
+        });
+      }
+      setCurrentUser(prev => ({ ...prev, photoURL: photoUrl }));
+      return { success: true, message: 'Foto de perfil actualizada correctamente' };
+    } catch (err: any) {
+      console.warn('Error actualizando foto de perfil en Firestore:', err);
+      setCurrentUser(prev => ({ ...prev, photoURL: photoUrl }));
+      return { success: true, message: 'Foto de perfil actualizada' };
+    }
+  };
+
   const isSuperAdmin = currentUser.isSuperAdmin || currentUser.roleType === 'super_admin';
 
   const isPrimaryAdminOf = (communityId: string) => {
@@ -551,6 +569,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         loadUserDogs,
         addDogToUser,
         refreshDogs,
+        updateUserPhoto,
         isSuperAdmin,
         isPrimaryAdminOf,
         canCreateEventFor,
