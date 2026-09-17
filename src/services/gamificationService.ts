@@ -5,6 +5,8 @@ import {
   RewardItem,
   RewardRedemption
 } from '../models/Gamification';
+import { doc, updateDoc, increment, collection, addDoc, serverTimestamp } from 'firebase/firestore';
+import { db } from '../firebase/config';
 import { logAuditAction } from './auditService';
 
 export const COOLDOWN_HOURS = 5;
@@ -40,7 +42,7 @@ export const canRollSurprisePaw = (userId: string): boolean => {
 
 export const PAW_ACTION_AMOUNTS: Record<PawActionType, number> = {
   account_created: 100,
-  passport_completed: 30,
+  passport_completed: 50,
   community_joined: 10,
   event_attended: 100,
   mission_completed: 40,
@@ -48,6 +50,50 @@ export const PAW_ACTION_AMOUNTS: Record<PawActionType, number> = {
   redeem_digital: 0,
   redeem_coupon: 0,
   admin_adjustment: 0,
+};
+
+/**
+ * Otorga Huellitas a un usuario, actualiza su saldo en Firestore y registra la transacción
+ */
+export const awardPaws = async (
+  userId: string,
+  actionType: PawActionType,
+  referenceId?: string,
+  customAmount?: number
+): Promise<{ success: boolean; amount: number }> => {
+  const amount = customAmount !== undefined ? customAmount : (PAW_ACTION_AMOUNTS[actionType] || 10);
+  try {
+    if (userId) {
+      await updateDoc(doc(db, 'users', userId), {
+        pawBalance: increment(amount),
+        updatedAt: serverTimestamp()
+      });
+
+      await addDoc(collection(db, 'pawTransactions'), {
+        userId,
+        actionType,
+        amount,
+        referenceId: referenceId || null,
+        createdAt: serverTimestamp()
+      });
+    }
+  } catch (error) {
+    console.warn('awardPaws Firestore error (offline/mock):', error);
+  }
+
+  try {
+    await logAuditAction(
+      userId,
+      'AWARD_PAWS',
+      'pawTransactions',
+      referenceId || userId,
+      `Otorgadas +${amount} Huellitas por acción: ${actionType}`
+    );
+  } catch (auditErr) {
+    console.warn('Audit error in awardPaws:', auditErr);
+  }
+
+  return { success: true, amount };
 };
 
 export const rollSurprisePawWithCooldown = (

@@ -20,6 +20,7 @@ import { getUserRedemptions } from '../services/rewardService';
 import { RewardRedemption } from '../models/Gamification';
 import { getDogBreeds, DogBreed, MASTER_DOG_BREEDS } from '../services/breedService';
 import { takePhoto, pickFromGallery } from '../services/imagePickerService';
+import { useToast } from '../context/ToastContext';
 
 interface OfficialBadgeInfo {
   id: string;
@@ -101,6 +102,7 @@ export const UserProfileScreen: React.FC = () => {
   const insets = useSafeAreaInsets();
   const navigation = useNavigation<any>();
   const { activeProfile, currentUser, currentDogs, addDogToUser, updateUserPhoto, isSuperAdmin, isBusinessOwner, logout } = useAuth();
+  const { showToast } = useToast();
 
   const [showDogsPublic, setShowDogsPublic] = useState(true);
   const [showCommunitiesPublic, setShowCommunitiesPublic] = useState(true);
@@ -155,9 +157,9 @@ export const UserProfileScreen: React.FC = () => {
     const res = await takePhoto();
     if (res.success && res.uri) {
       const updateRes = await updateUserPhoto(res.uri);
-      alert(updateRes.message);
+      showToast(updateRes.message, 'success');
     } else if (res.error) {
-      alert(res.error);
+      showToast(res.error, 'error');
     }
     setUpdatingAvatar(false);
   };
@@ -168,9 +170,9 @@ export const UserProfileScreen: React.FC = () => {
     const res = await pickFromGallery();
     if (res.success && res.uri) {
       const updateRes = await updateUserPhoto(res.uri);
-      alert(updateRes.message);
+      showToast(updateRes.message, 'success');
     } else if (res.error) {
-      alert(res.error);
+      showToast(res.error, 'error');
     }
     setUpdatingAvatar(false);
   };
@@ -180,8 +182,9 @@ export const UserProfileScreen: React.FC = () => {
     const res = await takePhoto();
     if (res.success && res.uri) {
       setCustomDogPhoto(res.uri);
+      showToast('¡Foto del perrito capturada!', 'success');
     } else if (res.error) {
-      alert(res.error);
+      showToast(res.error, 'error');
     }
   };
 
@@ -189,8 +192,9 @@ export const UserProfileScreen: React.FC = () => {
     const res = await pickFromGallery();
     if (res.success && res.uri) {
       setCustomDogPhoto(res.uri);
+      showToast('¡Foto seleccionada de tu galería!', 'success');
     } else if (res.error) {
-      alert(res.error);
+      showToast(res.error, 'error');
     }
   };
 
@@ -209,7 +213,7 @@ export const UserProfileScreen: React.FC = () => {
 
   const handleRegisterDog = async () => {
     if (!newDogName.trim() || !newDogBreed.trim()) {
-      alert('Por favor ingresa el nombre y selecciona la raza de tu perrito.');
+      showToast('Por favor ingresa el nombre y selecciona la raza de tu perrito.', 'warning');
       return;
     }
 
@@ -224,7 +228,7 @@ export const UserProfileScreen: React.FC = () => {
     });
     setSavingDog(false);
 
-    alert(res.message);
+    showToast(res.message, res.success ? 'success' : 'error');
     if (res.success) {
       setShowAddDogModal(false);
       setNewDogName('');

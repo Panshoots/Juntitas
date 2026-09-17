@@ -13,6 +13,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '../context/AuthContext';
+import { useToast } from '../context/ToastContext';
 import { UserRole, UserStatus } from '../models/User';
 
 interface AuthScreenProps {
@@ -26,6 +27,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
 }) => {
   const insets = useSafeAreaInsets();
   const { registerUser, loginUser, loginAsSuperAdmin, loginWithGoogle, sendPasswordReset } = useAuth();
+  const { showToast } = useToast();
 
   const [mode, setMode] = useState<'login' | 'register'>(initialMode);
   const [loading, setLoading] = useState(false);
@@ -82,7 +84,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
 
   const handleAuthSubmit = async () => {
     if (!email || !password) {
-      alert('Por favor completa tu correo y contraseña (ej: admin / admin).');
+      showToast('Por favor completa tu correo y contraseña.', 'warning');
       return;
     }
 
@@ -91,7 +93,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
     if (mode === 'login') {
       const res = await loginUser(email, password);
       setLoading(false);
-      alert(res.message);
+      showToast(res.message, res.success ? 'success' : 'error');
       if (res.success) {
         if (rememberMe) {
           try {
@@ -116,7 +118,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
     // Validación de Registro según Filtro
     if (!displayName || !comuna) {
       setLoading(false);
-      alert('Por favor ingresa tu nombre y comuna.');
+      showToast('Por favor ingresa tu nombre y comuna.', 'warning');
       return;
     }
 
@@ -127,7 +129,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
     if (profileType === 'tutor') {
       if (!dogName || !dogBreed) {
         setLoading(false);
-        alert('Por favor ingresa el nombre y raza de tu perrito.');
+        showToast('Por favor ingresa el nombre y raza de tu perrito.', 'warning');
         return;
       }
       role = 'member';
@@ -136,19 +138,19 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
     } else if (profileType === 'community_admin') {
       if (!communityName || !communityInstagram) {
         setLoading(false);
-        alert('Por favor ingresa el nombre de la comunidad e Instagram para verificación.');
+        showToast('Por favor ingresa el nombre de la comunidad e Instagram.', 'warning');
         return;
       }
       role = 'primary_admin';
-      status = 'PENDIENTE_APROBACION'; // Filtro de seguridad: Super Admin revisa antecedentes
+      status = 'PENDIENTE_APROBACION';
     } else if (profileType === 'business') {
       if (!businessName || !businessPhone) {
         setLoading(false);
-        alert('Por favor ingresa el nombre del negocio y teléfono.');
+        showToast('Por favor ingresa el nombre del negocio y teléfono.', 'warning');
         return;
       }
       role = 'business_owner';
-      status = 'PENDIENTE_APROBACION'; // Filtro de seguridad: Super Admin revisa negocio
+      status = 'PENDIENTE_APROBACION';
     }
 
     const res = await registerUser({
@@ -165,27 +167,25 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
     });
 
     setLoading(false);
-    if (!res.success) {
-      alert(res.message);
-    }
+    showToast(res.message, res.success ? 'success' : 'error');
   };
 
   const handleGoogleLogin = async () => {
     setLoading(true);
     const res = await loginWithGoogle();
     setLoading(false);
-    alert(res.message);
+    showToast(res.message, res.success ? 'success' : 'error');
   };
 
   const handleSendResetEmail = async () => {
     if (!forgotEmail) {
-      alert('Por favor ingresa tu correo electrónico.');
+      showToast('Por favor ingresa tu correo electrónico.', 'warning');
       return;
     }
     setSendingReset(true);
     const res = await sendPasswordReset(forgotEmail);
     setSendingReset(false);
-    alert(res.message);
+    showToast(res.message, res.success ? 'success' : 'error');
     if (res.success) {
       setShowForgotModal(false);
       setForgotEmail('');

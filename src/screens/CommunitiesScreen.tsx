@@ -1,4 +1,4 @@
-﻿import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { 
   View, 
   Text, 
@@ -17,10 +17,14 @@ import { getCommunities, joinCommunity, submitCommunityRequest, createOfficialCo
 import { getCommunityPhotos, uploadCommunityPhoto, deleteCommunityPhoto, CommunityPhoto } from '../services/communityPhotoService';
 import { awardPaws } from '../services/gamificationService';
 import { useAuth } from '../context/AuthContext';
+import { useToast } from '../context/ToastContext';
+import { getChileRegions, getComunasForRegion, ChileRegion, MASTER_CHILE_REGIONS } from '../services/locationService';
+import { takePhoto, pickFromGallery } from '../services/imagePickerService';
 
 export const CommunitiesScreen: React.FC = () => {
   const insets = useSafeAreaInsets();
   const { currentUser, currentDogs, activeProfile, isPrimaryAdminOf, isSuperAdmin } = useAuth();
+  const { showToast } = useToast();
   
   // Pestaña activa: Comunidades o Álbum de Fotos
   const [activeTab, setActiveTab] = useState<'communities' | 'photos'>('communities');
@@ -34,6 +38,15 @@ export const CommunitiesScreen: React.FC = () => {
   const [showAdminModal, setShowAdminModal] = useState(false);
   const [selectedAdminComm, setSelectedAdminComm] = useState<Community | null>(null);
 
+  // Estados de Ubicación (Región y Comuna de Chile)
+  const [regionsList, setRegionsList] = useState<ChileRegion[]>(MASTER_CHILE_REGIONS);
+  const [selectedRegionId, setSelectedRegionId] = useState('metropolitana');
+  const [selectedRegionName, setSelectedRegionName] = useState('Región Metropolitana de Santiago');
+  const [showRegionPickerModal, setShowRegionPickerModal] = useState(false);
+  const [showComunaPickerModal, setShowComunaPickerModal] = useState(false);
+  const [regionSearch, setRegionSearch] = useState('');
+  const [comunaSearch, setComunaSearch] = useState('');
+
   // Modal para subir fotos a la comunidad
   const [showUploadModal, setShowUploadModal] = useState(false);
   const [photoCaption, setPhotoCaption] = useState('');
@@ -45,12 +58,15 @@ export const CommunitiesScreen: React.FC = () => {
   const [reqName, setReqName] = useState('');
   const [reqDesc, setReqDesc] = useState('');
   const [reqInstagram, setReqInstagram] = useState('');
-  const [reqComuna, setReqComuna] = useState('');
+  const [reqComuna, setReqComuna] = useState('Las Condes');
   const [reqSize, setReqSize] = useState('50');
 
   useEffect(() => {
     loadCommunities();
     loadPhotos();
+    getChileRegions().then(list => {
+      if (list && list.length > 0) setRegionsList(list);
+    }).catch(err => console.warn('Error cargando regiones:', err));
   }, []);
 
   const loadCommunities = async () => {
@@ -63,13 +79,59 @@ export const CommunitiesScreen: React.FC = () => {
     setPhotos(data);
   };
 
+  const handleSelectRegion = (reg: ChileRegion) => {
+    setSelectedRegionId(reg.id);
+    setSelectedRegionName(reg.name);
+    // Seleccionar automáticamente la primera comuna de la región
+    const comunas = getComunasForRegion(reg.id);
+    setReqComuna(comunas[0] || '');
+    setShowRegionPickerModal(false);
+    setRegionSearch('');
+  };
+
+  const handleSelectComuna = (c: string) => {
+    setReqComuna(c);
+    setShowComunaPickerModal(false);
+    setComunaSearch('');
+  };
+
+  const availableComunas = getComunasForRegion(selectedRegionId);
+  const filteredRegions = regionsList.filter(r => 
+    r.name.toLowerCase().includes(regionSearch.toLowerCase()) || 
+    r.roman.toLowerCase().includes(regionSearch.toLowerCase())
+  );
+  const filteredComunas = availableComunas.filter(c => 
+    c.toLowerCase().includes(comunaSearch.toLowerCase())
+  );
+
+  // Handlers para tomar y seleccionar foto en comunidad
+  const handleTakeCommunityPhoto = async () => {
+    const res = await takePhoto();
+    if (res.success && res.uri) {
+      setPhotoUrl(res.uri);
+      showToast('¡Foto capturada con éxito!', 'success');
+    } else if (res.error) {
+      showToast(res.error, 'error');
+    }
+  };
+
+  const handlePickCommunityPhotoGallery = async () => {
+    const res = await pickFromGallery();
+    if (res.success && res.uri) {
+      setPhotoUrl(res.uri);
+      showToast('¡Imagen seleccionada de tu galería!', 'success');
+    } else if (res.error) {
+      showToast(res.error, 'error');
+    }
+  };
+
   const handleJoin = async (community: Community) => {
     if (!currentUser || !currentUser.id) {
-      alert('Debes iniciar sesión para unirte a una comunidad.');
+      showToast('Debes iniciar sesión para unirte a una comunidad.', 'warning');
       return;
     }
     const res = await joinCommunity(community.id, currentUser.id);
-    alert(res.message);
+    showToast(res.message, res.success ? 'success' : 'error');
     if (res.success) {
       await awardPaws(currentUser.id, 'community_joined', community.id);
       loadCommunities();
@@ -78,12 +140,12 @@ export const CommunitiesScreen: React.FC = () => {
 
   const handleSendRequest = async () => {
     if (!reqName || !reqInstagram || !reqComuna) {
-      alert('Por favor completa el nombre, Instagram y comuna.');
+      showToast('Por favor completa el nombre, Instagram y comuna.', 'warning');
       return;
     }
 
     if (!currentUser || !currentUser.id) {
-      alert('Debes iniciar sesión para realizar esta acción.');
+      showToast('Debes iniciar sesión para realizar esta acción.', 'warning');
       return;
     }
 
@@ -92,17 +154,16 @@ export const CommunitiesScreen: React.FC = () => {
         name: reqName,
         description: reqDesc,
         instagramHandle: reqInstagram,
-        region: 'Metropolitana',
+        region: selectedRegionName,
         comuna: reqComuna,
         primaryAdminId: currentUser.id
       });
-      alert(res.message);
+      showToast(res.message, res.success ? 'success' : 'error');
       if (res.success) {
         setShowRequestModal(false);
         setReqName('');
         setReqDesc('');
         setReqInstagram('');
-        setReqComuna('');
         loadCommunities();
       }
       return;
@@ -116,26 +177,25 @@ export const CommunitiesScreen: React.FC = () => {
       description: reqDesc,
       instagramHandle: reqInstagram,
       verificationEvidenceUrls: [],
-      region: 'Metropolitana',
+      region: selectedRegionName,
       comuna: reqComuna,
       approximateSize: parseInt(reqSize, 10) || 50
     });
 
     if (res.success) {
-      alert('¡Solicitud enviada a revisión oficial! Un Super Administrador revisará los antecedentes según el Plan Maestro.');
+      showToast('¡Solicitud enviada a revisión oficial! Un Super Administrador revisará los antecedentes.', 'success');
       setShowRequestModal(false);
       setReqName('');
       setReqDesc('');
       setReqInstagram('');
-      setReqComuna('');
     } else {
-      alert(res.message);
+      showToast(res.message, 'error');
     }
   };
 
   const handleUploadPhoto = async () => {
     if (!photoCaption.trim()) {
-      alert('Por favor escribe un pie de foto o descripción.');
+      showToast('Por favor escribe un pie de foto o descripción.', 'warning');
       return;
     }
 
@@ -154,7 +214,7 @@ export const CommunitiesScreen: React.FC = () => {
     });
     setUploading(false);
 
-    alert(res.message);
+    showToast(res.message, res.success ? 'success' : 'error');
     if (res.success) {
       setShowUploadModal(false);
       setPhotoCaption('');
@@ -168,7 +228,7 @@ export const CommunitiesScreen: React.FC = () => {
     if (!confirmDelete) return;
 
     const res = await deleteCommunityPhoto(photoId, currentUser.id);
-    alert(res.message);
+    showToast(res.message, res.success ? 'success' : 'error');
     if (res.success) {
       loadPhotos();
     }
@@ -400,12 +460,33 @@ export const CommunitiesScreen: React.FC = () => {
               style={styles.modalInput}
             />
 
-            <TextInput
-              placeholder="Comuna o sector principal"
-              value={reqComuna}
-              onChangeText={setReqComuna}
-              style={styles.modalInput}
-            />
+            <Text style={styles.inputSectionLabel}>Región Oficial:</Text>
+            <TouchableOpacity 
+              style={styles.locationSelectorBtn}
+              onPress={() => setShowRegionPickerModal(true)}
+            >
+              <Ionicons name="map" size={18} color="#0284C7" style={{ marginRight: 8 }} />
+              <View style={{ flex: 1 }}>
+                <Text style={styles.locationSelectorTextSelected} numberOfLines={1}>
+                  {selectedRegionName}
+                </Text>
+              </View>
+              <Ionicons name="chevron-forward" size={18} color="#94A3B8" />
+            </TouchableOpacity>
+
+            <Text style={styles.inputSectionLabel}>Comuna de la Región:</Text>
+            <TouchableOpacity 
+              style={styles.locationSelectorBtn}
+              onPress={() => setShowComunaPickerModal(true)}
+            >
+              <Ionicons name="location" size={18} color="#0284C7" style={{ marginRight: 8 }} />
+              <View style={{ flex: 1 }}>
+                <Text style={reqComuna ? styles.locationSelectorTextSelected : styles.locationSelectorTextPlaceholder} numberOfLines={1}>
+                  {reqComuna ? reqComuna : 'Seleccionar comuna...'}
+                </Text>
+              </View>
+              <Ionicons name="chevron-forward" size={18} color="#94A3B8" />
+            </TouchableOpacity>
 
             <TextInput
               placeholder="Descripción y propósito"
@@ -413,7 +494,7 @@ export const CommunitiesScreen: React.FC = () => {
               onChangeText={setReqDesc}
               multiline
               numberOfLines={3}
-              style={[styles.modalInput, { height: 70 }]}
+              style={[styles.modalInput, { height: 70, marginTop: 8 }]}
             />
 
             <TouchableOpacity 
@@ -440,7 +521,7 @@ export const CommunitiesScreen: React.FC = () => {
             </View>
 
             <Text style={styles.modalIntro}>
-              Comparte momentos de tu perrito jugando o asistiendo a juntas oficiales. Ganarás +15 🐾 Huellitas.
+              Comparte fotos de tu perrito en juntas o paseos comunitarios. Ganarás +15 🐾 Huellitas.
             </Text>
 
             <Text style={styles.fieldLabel}>Perrito en la foto:</Text>
@@ -451,18 +532,33 @@ export const CommunitiesScreen: React.FC = () => {
               style={styles.modalInput}
             />
 
-            <Text style={styles.fieldLabel}>URL de la Foto (o deja en blanco para predeterminada):</Text>
-            <TextInput
-              placeholder="https://... (URL de imagen)"
-              value={photoUrl}
-              onChangeText={setPhotoUrl}
-              autoCapitalize="none"
-              style={styles.modalInput}
-            />
+            <Text style={styles.fieldLabel}>Foto:</Text>
+            <View style={styles.photoActionRow}>
+              <TouchableOpacity style={styles.photoActionButton} onPress={handleTakeCommunityPhoto}>
+                <Ionicons name="camera" size={18} color="#0284C7" />
+                <Text style={styles.photoActionText}>Tomar Foto</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.photoActionButton} onPress={handlePickCommunityPhotoGallery}>
+                <Ionicons name="images" size={18} color="#0284C7" />
+                <Text style={styles.photoActionText}>De Galería</Text>
+              </TouchableOpacity>
+            </View>
+
+            {photoUrl ? (
+              <View style={styles.previewImageCard}>
+                <Image source={{ uri: photoUrl }} style={styles.previewImageThumb} />
+                <View style={{ flex: 1, marginLeft: 10 }}>
+                  <Text style={styles.previewSuccessText}>✓ Foto lista para compartir</Text>
+                  <TouchableOpacity onPress={() => setPhotoUrl('')} style={{ marginTop: 2 }}>
+                    <Text style={styles.removePhotoText}>Cambiar foto</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            ) : null}
 
             <Text style={styles.fieldLabel}>Pie de foto o experiencia:</Text>
             <TextInput
-              placeholder="¿Qué estaban haciendo? (ej: ¡Feliz en la junta en el parque!)"
+              placeholder="¿Qué estaban haciendo? (ej: ¡Paseo increíble en el parque!)"
               value={photoCaption}
               onChangeText={setPhotoCaption}
               multiline
@@ -479,6 +575,118 @@ export const CommunitiesScreen: React.FC = () => {
                 {uploading ? 'Subiendo foto...' : 'Publicar Foto (+15 🐾)'}
               </Text>
             </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Modal Buscador de Regiones de Chile */}
+      <Modal visible={showRegionPickerModal} transparent animationType="slide">
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalCard, { maxHeight: '85%' }]}>
+            <View style={styles.modalHeader}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.modalTitle}>🇨🇱 Selecciona Región</Text>
+                <Text style={styles.modalIntro}>16 Regiones oficiales de Chile en BD</Text>
+              </View>
+              <TouchableOpacity onPress={() => setShowRegionPickerModal(false)}>
+                <Ionicons name="close" size={24} color="#64748B" />
+              </TouchableOpacity>
+            </View>
+
+            <View style={styles.pickerSearchBar}>
+              <Ionicons name="search" size={18} color="#64748B" />
+              <TextInput
+                placeholder="Buscar región (ej: Metropolitana, Valparaíso)..."
+                value={regionSearch}
+                onChangeText={setRegionSearch}
+                style={styles.pickerSearchInput}
+                autoFocus
+              />
+              {regionSearch.length > 0 && (
+                <TouchableOpacity onPress={() => setRegionSearch('')}>
+                  <Ionicons name="close-circle" size={18} color="#94A3B8" />
+                </TouchableOpacity>
+              )}
+            </View>
+
+            <FlatList
+              data={filteredRegions}
+              keyExtractor={(item) => item.id}
+              style={styles.pickerScroll}
+              renderItem={({ item }) => (
+                <TouchableOpacity
+                  style={[
+                    styles.pickerItemRow,
+                    selectedRegionId === item.id && styles.pickerItemRowActive
+                  ]}
+                  onPress={() => handleSelectRegion(item)}
+                >
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.pickerItemTitle}>{item.name}</Text>
+                    <Text style={styles.pickerItemSub}>{item.comunas.length} comunas oficiales</Text>
+                  </View>
+                  <View style={styles.pillBadge}>
+                    <Text style={styles.pillBadgeText}>{item.roman}</Text>
+                  </View>
+                </TouchableOpacity>
+              )}
+            />
+          </View>
+        </View>
+      </Modal>
+
+      {/* Modal Buscador de Comunas de Chile */}
+      <Modal visible={showComunaPickerModal} transparent animationType="slide">
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalCard, { maxHeight: '85%' }]}>
+            <View style={styles.modalHeader}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.modalTitle}>📍 Comunas de {selectedRegionName}</Text>
+                <Text style={styles.modalIntro}>Elige la comuna correspondiente</Text>
+              </View>
+              <TouchableOpacity onPress={() => setShowComunaPickerModal(false)}>
+                <Ionicons name="close" size={24} color="#64748B" />
+              </TouchableOpacity>
+            </View>
+
+            <View style={styles.pickerSearchBar}>
+              <Ionicons name="search" size={18} color="#64748B" />
+              <TextInput
+                placeholder="Buscar comuna (ej: Las Condes, Santiago)..."
+                value={comunaSearch}
+                onChangeText={setComunaSearch}
+                style={styles.pickerSearchInput}
+                autoFocus
+              />
+              {comunaSearch.length > 0 && (
+                <TouchableOpacity onPress={() => setComunaSearch('')}>
+                  <Ionicons name="close-circle" size={18} color="#94A3B8" />
+                </TouchableOpacity>
+              )}
+            </View>
+
+            <FlatList
+              data={filteredComunas}
+              keyExtractor={(item) => item}
+              style={styles.pickerScroll}
+              renderItem={({ item }) => (
+                <TouchableOpacity
+                  style={[
+                    styles.pickerItemRow,
+                    reqComuna === item && styles.pickerItemRowActive
+                  ]}
+                  onPress={() => handleSelectComuna(item)}
+                >
+                  <Ionicons 
+                    name={reqComuna === item ? "radio-button-on" : "radio-button-off"} 
+                    size={18} 
+                    color={reqComuna === item ? "#0284C7" : "#94A3B8"} 
+                    style={{ marginRight: 10 }}
+                  />
+                  <Text style={styles.pickerItemTitle}>{item}</Text>
+                </TouchableOpacity>
+              )}
+            />
           </View>
         </View>
       </Modal>
@@ -914,5 +1122,131 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '700',
     color: '#475569',
+  },
+  inputSectionLabel: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#334155',
+    marginBottom: 4,
+    marginTop: 4,
+  },
+  locationSelectorBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F0F9FF',
+    borderWidth: 1.5,
+    borderColor: '#BAE6FD',
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    marginBottom: 8,
+  },
+  locationSelectorTextSelected: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#0369A1',
+  },
+  locationSelectorTextPlaceholder: {
+    fontSize: 13,
+    color: '#64748B',
+  },
+  photoActionRow: {
+    flexDirection: 'row',
+    gap: 10,
+    marginBottom: 10,
+  },
+  photoActionButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#F0F9FF',
+    borderWidth: 1.5,
+    borderColor: '#BAE6FD',
+    borderRadius: 12,
+    paddingVertical: 10,
+    gap: 6,
+  },
+  photoActionText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#0284C7',
+  },
+  previewImageCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    borderRadius: 12,
+    padding: 8,
+    marginBottom: 10,
+  },
+  previewImageThumb: {
+    width: 50,
+    height: 50,
+    borderRadius: 10,
+    backgroundColor: '#E2E8F0',
+  },
+  previewSuccessText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#059669',
+  },
+  removePhotoText: {
+    fontSize: 11,
+    color: '#DC2626',
+    fontWeight: '600',
+  },
+  pickerSearchBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F1F5F9',
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    marginBottom: 12,
+    gap: 8,
+  },
+  pickerSearchInput: {
+    flex: 1,
+    fontSize: 14,
+    color: '#0F172A',
+  },
+  pickerScroll: {
+    maxHeight: 340,
+  },
+  pickerItemRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 12,
+    borderRadius: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F1F5F9',
+  },
+  pickerItemRowActive: {
+    backgroundColor: '#F0F9FF',
+  },
+  pickerItemTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#1E293B',
+  },
+  pickerItemSub: {
+    fontSize: 11,
+    color: '#64748B',
+    marginTop: 2,
+  },
+  pillBadge: {
+    backgroundColor: '#FEF3C7',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+  },
+  pillBadgeText: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#B45309',
   },
 });
