@@ -504,20 +504,25 @@ export const getManagedCommunitiesForUser = async (
   userId: string,
   roleType?: string,
   communityIdManaged?: string,
-  isSuperAdmin?: boolean
+  userEmail?: string
 ): Promise<Community[]> => {
+  if (!userId) return [];
   const all = await getCommunities();
-  if (isSuperAdmin) return all;
   return all.filter(c => {
-    // Es admin titular por ID
-    if (c.primaryAdminId === userId) return true;
-    // O su perfil activo lo marca como admin principal de esta comunidad
-    if (roleType === 'primary_admin' && communityIdManaged === c.id) return true;
-    // O es admin secundario con permiso para convocar juntas (canCreateEvents)
-    const sec = c.secondaryAdmins?.find(s => s.userId === userId);
+    // 1. Es el Administrador Principal (Titular) registrado con su ID
+    if (c.primaryAdminId && c.primaryAdminId === userId) return true;
+
+    // 2. Es Administrador Secundario con permiso explícito para crear juntas
+    const sec = c.secondaryAdmins?.find(s => 
+      (s.userId && s.userId === userId) || 
+      (userEmail && s.email && s.email.toLowerCase() === userEmail.toLowerCase())
+    );
     if (sec && sec.permissions?.canCreateEvents) return true;
-    // O su perfil activo lo marca como admin secundario de esta comunidad
-    if (roleType === 'secondary_admin' && communityIdManaged === c.id) return true;
+
+    // 3. Su perfil activo o asignación gestiona específicamente ESTA comunidad
+    if (roleType === 'primary_admin' && communityIdManaged && communityIdManaged === c.id) return true;
+    if (roleType === 'secondary_admin' && communityIdManaged && communityIdManaged === c.id) return true;
+
     return false;
   });
 };

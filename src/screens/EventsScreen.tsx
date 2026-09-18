@@ -72,8 +72,8 @@ export const EventsScreen: React.FC = () => {
   const [newComuna, setNewComuna] = useState('Providencia');
   const [newAcceptsBusinesses, setNewAcceptsBusinesses] = useState(true);
 
-  // Solo se permite publicar junta si administra al menos una comunidad (o es SuperAdmin)
-  const canPublishJunta = isSuperAdmin || managedCommunities.length > 0;
+  // Solo se permite publicar junta si el usuario administra activamente al menos una comunidad
+  const canPublishJunta = managedCommunities.length > 0;
 
   useEffect(() => {
     loadEvents();
@@ -97,12 +97,12 @@ export const EventsScreen: React.FC = () => {
       const atts = await getUserAttendances(currentUser.id);
       setAttendancesMap(atts);
 
-      // Cargar comunidades donde el usuario es Administrador (Titular o Secundario con canCreateEvents)
+      // Cargar ÚNICAMENTE comunidades donde el usuario es Administrador Real (Titular o Secundario con canCreateEvents)
       const userManaged = await getManagedCommunitiesForUser(
         currentUser.id,
         activeProfile.roleType,
         activeProfile.communityIdManaged,
-        isSuperAdmin
+        currentUser.email
       );
       setManagedCommunities(userManaged);
       if (userManaged.length > 0) {
@@ -211,8 +211,14 @@ export const EventsScreen: React.FC = () => {
   };
 
   const handleCreateNewEvent = async () => {
-    if (!canPublishJunta || !selectedCommunityToPublish) {
-      showToast('Debes ser administrador de una comunidad para publicar juntas oficiales.', 'error');
+    if (!canPublishJunta || !selectedCommunityToPublish || managedCommunities.length === 0) {
+      showToast('No eres administrador de ninguna comunidad para convocar juntas.', 'error');
+      return;
+    }
+
+    const isAuthorized = managedCommunities.some(c => c.id === selectedCommunityToPublish.id);
+    if (!isAuthorized) {
+      showToast(`No eres administrador de "${selectedCommunityToPublish.name}". Solo puedes crear juntas de tu propia comunidad.`, 'error');
       return;
     }
 
@@ -536,6 +542,17 @@ export const EventsScreen: React.FC = () => {
             </View>
 
             <ScrollView showsVerticalScrollIndicator={false}>
+              {/* Alerta si no es admin de ninguna comunidad */}
+              {managedCommunities.length === 0 && (
+                <View style={styles.noAdminWarningBox}>
+                  <Ionicons name="alert-circle" size={24} color="#DC2626" />
+                  <Text style={styles.noAdminWarningTitle}>No eres administrador de ninguna comunidad</Text>
+                  <Text style={styles.noAdminWarningText}>
+                    Solo los administradores oficiales pueden convocar juntas. Si deseas convocar un evento, debes ser el administrador de tu propio grupo canino.
+                  </Text>
+                </View>
+              )}
+
               {/* Reconocimiento de la Comunidad Convocante */}
               {managedCommunities.length === 1 && (
                 <View style={styles.convocantCommunityCard}>
@@ -1364,6 +1381,29 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontWeight: '600',
     color: '#64748B',
+  },
+  noAdminWarningBox: {
+    backgroundColor: '#FEF2F2',
+    borderWidth: 1,
+    borderColor: '#FECACA',
+    borderRadius: 14,
+    padding: 16,
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  noAdminWarningTitle: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: '#DC2626',
+    marginTop: 6,
+    textAlign: 'center',
+  },
+  noAdminWarningText: {
+    fontSize: 12,
+    color: '#991B1B',
+    textAlign: 'center',
+    marginTop: 4,
+    lineHeight: 16,
   },
   convocantCommunityCard: {
     flexDirection: 'row',

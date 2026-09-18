@@ -537,14 +537,20 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const isSuperAdmin = currentUser.isSuperAdmin || currentUser.roleType === 'super_admin';
 
   const isPrimaryAdminOf = (communityId: string) => {
-    if (isSuperAdmin) return true;
-    return currentUser.roleType === 'primary_admin';
+    if (!communityId) return false;
+    const profile = getProfileInfo(currentUser);
+    return profile.roleType === 'primary_admin' && profile.communityIdManaged === communityId;
   };
 
   const canCreateEventFor = (communityId: string) => {
-    if (isSuperAdmin) return true;
-    if (currentUser.roleType === 'primary_admin') return true;
-    if (currentUser.roleType === 'secondary_admin') return true;
+    if (!communityId) return false;
+    const profile = getProfileInfo(currentUser);
+    if (profile.communityIdManaged === communityId) {
+      if (profile.roleType === 'primary_admin') return true;
+      if (profile.roleType === 'secondary_admin') {
+        return !!profile.secondaryPermissions?.canCreateEvents;
+      }
+    }
     return false;
   };
 
