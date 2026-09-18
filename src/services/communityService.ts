@@ -499,3 +499,25 @@ export const addSecondaryAdmin = async (
     updatedAdmins: admins 
   };
 };
+
+export const getManagedCommunitiesForUser = async (
+  userId: string,
+  roleType?: string,
+  communityIdManaged?: string,
+  isSuperAdmin?: boolean
+): Promise<Community[]> => {
+  const all = await getCommunities();
+  if (isSuperAdmin) return all;
+  return all.filter(c => {
+    // Es admin titular por ID
+    if (c.primaryAdminId === userId) return true;
+    // O su perfil activo lo marca como admin principal de esta comunidad
+    if (roleType === 'primary_admin' && communityIdManaged === c.id) return true;
+    // O es admin secundario con permiso para convocar juntas (canCreateEvents)
+    const sec = c.secondaryAdmins?.find(s => s.userId === userId);
+    if (sec && sec.permissions?.canCreateEvents) return true;
+    // O su perfil activo lo marca como admin secundario de esta comunidad
+    if (roleType === 'secondary_admin' && communityIdManaged === c.id) return true;
+    return false;
+  });
+};

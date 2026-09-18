@@ -14,6 +14,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { DogEvent, DogAttendeeSummary, EventStatus } from '../models/Event';
+import { Community } from '../models/Community';
 import { 
   getEvents, 
   registerForEvent, 
@@ -23,13 +24,15 @@ import {
   openGoogleMapsUrl, 
   createEvent 
 } from '../services/eventService';
+import { getManagedCommunitiesForUser } from '../services/communityService';
 import { awardPaws } from '../services/gamificationService';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
+import { FreeMapPickerModal, SelectedLocationData } from '../components/FreeMapPickerModal';
 
 export const EventsScreen: React.FC = () => {
   const insets = useSafeAreaInsets();
-  const { activeProfile, currentUser, currentDogs, isSuperAdmin, canCreateEventFor } = useAuth();
+  const { activeProfile, currentUser, currentDogs, isSuperAdmin } = useAuth();
   const { showToast } = useToast();
   const [events, setEvents] = useState<DogEvent[]>([]);
   const [attendancesMap, setAttendancesMap] = useState<Record<string, DogAttendeeSummary[]>>({});
@@ -37,6 +40,15 @@ export const EventsScreen: React.FC = () => {
   const [modalMode, setModalMode] = useState<'register' | 'edit'>('register');
   const [showRegisterModal, setShowRegisterModal] = useState(false);
   const [showCreateEventModal, setShowCreateEventModal] = useState(false);
+
+  // Comunidades donde el usuario es Admin (Titular o Secundario con permiso EVENT_CREATE)
+  const [managedCommunities, setManagedCommunities] = useState<Community[]>([]);
+  const [selectedCommunityToPublish, setSelectedCommunityToPublish] = useState<Community | null>(null);
+
+  // Modal de Mapa Gratuito OpenStreetMap + Nominatim
+  const [showMapPickerModal, setShowMapPickerModal] = useState(false);
+  const [geoCoords, setGeoCoords] = useState<{ latitude: number; longitude: number } | null>(null);
+  const [selectedLocationInfo, setSelectedLocationInfo] = useState<SelectedLocationData | null>(null);
 
   // Modal de Visualización Separada de Tutores, Perritos y Comercios
   const [showAttendeesModal, setShowAttendeesModal] = useState(false);
@@ -60,12 +72,12 @@ export const EventsScreen: React.FC = () => {
   const [newComuna, setNewComuna] = useState('Providencia');
   const [newAcceptsBusinesses, setNewAcceptsBusinesses] = useState(true);
 
-  // ¿Puede crear eventos en la comunidad activa?
-  const canPublishJunta = isSuperAdmin || canCreateEventFor('comm-1') || activeProfile.roleType === 'primary_admin' || activeProfile.roleType === 'secondary_admin';
+  // Solo se permite publicar junta si administra al menos una comunidad (o es SuperAdmin)
+  const canPublishJunta = isSuperAdmin || managedCommunities.length > 0;
 
   useEffect(() => {
     loadEvents();
-  }, [currentUser?.id]);
+  }, [currentUser?.id, activeProfile.roleType, activeProfile.communityIdManaged]);
 
   useEffect(() => {
     // Inicializar primer perro seleccionado si existe
@@ -84,6 +96,26 @@ export const EventsScreen: React.FC = () => {
     if (currentUser?.id) {
       const atts = await getUserAttendances(currentUser.id);
       setAttendancesMap(atts);
+
+      // Cargar comunidades donde el usuario es Administrador (Titular o Secundario con canCreateEvents)
+      const userManaged = await getManagedCommunitiesForUser(
+        currentUser.id,
+        activeProfile.roleType,
+        activeProfile.communityIdManaged,
+        isSuperAdmin
+      );
+      setManagedCommunities(userManaged);
+      if (userManaged.length > 0) {
+        setSelectedCommunityToPublish(prev => {
+          if (prev && userManaged.some(m => m.id === prev.id)) return prev;
+          return userManaged[0];
+        });
+      } else {
+        setSelectedCommunityToPublish(null);
+      }
+    } else {
+      setManagedCommunities([]);
+      setSelectedCommunityToPublish(null);
     }
   };
 
@@ -179,27 +211,48 @@ export const EventsScreen: React.FC = () => {
   };
 
   const handleCreateNewEvent = async () => {
-    if (!newTitle || !newPlace || !newAddress) {
-      showToast('Por favor completa el título, lugar y dirección.', 'warning');
+    if (!canPublishJunta || !selectedCommunityToPublish) {
+      showToast('Debes ser administrador de una comunidad para publicar juntas oficiales.', 'error');
       return;
     }
 
+    if (!newTitle.trim() || !newPlace.trim() || !newAddress.trim()) {
+      showToast('Por favor completa el título, nombre del lugar y dirección de la junta.', 'warning');
+      return;
+    }
+
+    const mapsUrl = geoCoords
+      ? `https://maps.google.com/?q=${geoCoords.latitude},${geoCoords.longitude}`
+      : `https://maps.google.com/?q=${encodeURIComponent(newPlace.trim() + ', ' + newAddress.trim() + ', ' + newComuna)}`;
+
     const res = await createEvent({
-      communityId: activeProfile.communityIdManaged || 'comm-1',
-      communityName: activeProfile.communityNameManaged || 'Golden Retrievers Chile',
-      communityLogoUrl: 'https://images.unsplash.com/photo-1552053831-71594a27632d?w=200',
-      title: newTitle,
-      description: newDesc || 'Junta oficial para socializar y jugar.',
+      communityId: selectedCommunityToPublish.id,
+      communityName: selectedCommunityToPublish.name,
+      communityLogoUrl: selectedCommunityToPublish.logoUrl,
+      title: newTitle.trim(),
+      description: newDesc.trim() || 'Junta oficial para socializar y jugar.',
       startDate: new Date(Date.now() + 86400000 * 7),
       endDate: new Date(Date.now() + 86400000 * 7 + 7200000),
+      status: 'programada',
+      rules: [
+        'Uso obligatorio de correa en todo momento',
+        'Llevar bolsitas para recoger deposiciones',
+        'Respetar el espacio y tiempo de adaptación de cada perrito'
+      ],
+      requirements: [
+        'Vacunas al día (séxtuple u óctuple y antirrábica)',
+        'Placa de identificación visible con teléfono del tutor'
+      ],
+      organizerUserIds: [currentUser.id],
       location: {
-        placeName: newPlace,
-        address: newAddress,
+        placeName: newPlace.trim(),
+        address: newAddress.trim(),
         comuna: newComuna,
-        region: 'Metropolitana',
-        googleMapsUrl: `https://maps.google.com/?q=${encodeURIComponent(newPlace + ', ' + newAddress)}`
+        region: selectedLocationInfo?.region || 'Metropolitana',
+        googleMapsUrl: mapsUrl,
+        geoCoordinates: geoCoords || undefined
       },
-      coverPhotoUrl: 'https://images.unsplash.com/photo-1601758228041-f3b2795255f1?w=800',
+      coverPhotoUrl: selectedCommunityToPublish.coverPhotoUrl || selectedCommunityToPublish.bannerUrl || 'https://images.unsplash.com/photo-1601758228041-f3b2795255f1?w=800',
       creatorUserId: currentUser.id,
       acceptsBusinesses: newAcceptsBusinesses,
     });
@@ -211,6 +264,8 @@ export const EventsScreen: React.FC = () => {
       setNewDesc('');
       setNewPlace('');
       setNewAddress('');
+      setGeoCoords(null);
+      setSelectedLocationInfo(null);
       loadEvents();
     }
   };
@@ -242,8 +297,8 @@ export const EventsScreen: React.FC = () => {
           <Text style={styles.subtitle}>Actividades oficiales y vida social para tu perrito</Text>
         </View>
 
-        {/* Botón visible solo para Administradores de la Comunidad (Sección 8 y 30 Plan Maestro) */}
-        {canPublishJunta && (
+        {/* Botón visible solo para Administradores de la Comunidad (Titular o Secundario con permiso) */}
+        {canPublishJunta ? (
           <TouchableOpacity 
             style={styles.publishButton}
             onPress={() => setShowCreateEventModal(true)}
@@ -251,6 +306,11 @@ export const EventsScreen: React.FC = () => {
             <Ionicons name="add" size={18} color="#FFFFFF" />
             <Text style={styles.publishButtonText}>Publicar Junta</Text>
           </TouchableOpacity>
+        ) : (
+          <View style={styles.nonAdminInfoChip}>
+            <Ionicons name="information-circle-outline" size={13} color="#64748B" />
+            <Text style={styles.nonAdminInfoText}>Solo administradores convocan</Text>
+          </View>
         )}
       </View>
 
@@ -464,10 +524,10 @@ export const EventsScreen: React.FC = () => {
         </View>
       </Modal>
 
-      {/* Modal para Crear/Publicar Junta (Exclusivo para Administradores con EVENT_CREATE) */}
+      {/* Modal para Crear/Publicar Junta (Exclusivo para Administradores) */}
       <Modal visible={showCreateEventModal} transparent animationType="slide">
         <View style={styles.modalOverlay}>
-          <View style={styles.modalCard}>
+          <View style={[styles.modalCard, { maxHeight: '90%' }]}>
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>➕ Publicar Junta Oficial</Text>
               <TouchableOpacity onPress={() => setShowCreateEventModal(false)}>
@@ -475,58 +535,151 @@ export const EventsScreen: React.FC = () => {
               </TouchableOpacity>
             </View>
 
-            <Text style={styles.modalSubtitle}>
-              Comunidad: {activeProfile.communityNameManaged || 'Golden Retrievers Chile'} (Permiso: EVENT_CREATE)
-            </Text>
+            <ScrollView showsVerticalScrollIndicator={false}>
+              {/* Reconocimiento de la Comunidad Convocante */}
+              {managedCommunities.length === 1 && (
+                <View style={styles.convocantCommunityCard}>
+                  <Image 
+                    source={{ uri: selectedCommunityToPublish?.logoUrl || 'https://images.unsplash.com/photo-1548199973-03cce0bbc87b?w=300' }} 
+                    style={styles.convocantLogo} 
+                  />
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.convocantLead}>Comunidad Convocante Reconocida:</Text>
+                    <Text style={styles.convocantName}>{selectedCommunityToPublish?.name}</Text>
+                  </View>
+                  <View style={styles.adminVerifiedBadge}>
+                    <Ionicons name="shield-checkmark" size={13} color="#059669" />
+                    <Text style={styles.adminVerifiedText}>Admin</Text>
+                  </View>
+                </View>
+              )}
 
-            <TextInput
-              placeholder="Título de la junta (ej: Gran Junta Primavera Golden)"
-              value={newTitle}
-              onChangeText={setNewTitle}
-              style={styles.modalInput}
-            />
+              {managedCommunities.length > 1 && (
+                <View style={styles.selectCommunitySection}>
+                  <Text style={styles.selectCommunityLead}>Selecciona la comunidad que convoca la junta:</Text>
+                  <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8, paddingVertical: 4 }}>
+                    {managedCommunities.map(comm => {
+                      const isSel = selectedCommunityToPublish?.id === comm.id;
+                      return (
+                        <TouchableOpacity 
+                          key={comm.id} 
+                          style={[styles.commSelectChip, isSel && styles.commSelectChipActive]}
+                          onPress={() => setSelectedCommunityToPublish(comm)}
+                        >
+                          <Image source={{ uri: comm.logoUrl }} style={styles.commSelectThumb} />
+                          <Text style={[styles.commSelectText, isSel && styles.commSelectTextActive]}>{comm.name}</Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </ScrollView>
+                </View>
+              )}
 
-            <TextInput
-              placeholder="Nombre del lugar (ej: Parque Inés de Suárez)"
-              value={newPlace}
-              onChangeText={setNewPlace}
-              style={styles.modalInput}
-            />
-
-            <TextInput
-              placeholder="Dirección exacta (ej: Antonio Varas 1510)"
-              value={newAddress}
-              onChangeText={setNewAddress}
-              style={styles.modalInput}
-            />
-
-            <TextInput
-              placeholder="Descripción y recomendaciones (agua, correa, etc.)"
-              value={newDesc}
-              onChangeText={setNewDesc}
-              multiline
-              numberOfLines={3}
-              style={[styles.modalInput, { height: 60 }]}
-            />
-
-            <TouchableOpacity 
-              style={styles.toggleBizRow}
-              onPress={() => setNewAcceptsBusinesses(!newAcceptsBusinesses)}
-            >
-              <Ionicons 
-                name={newAcceptsBusinesses ? "checkbox" : "square-outline"} 
-                size={22} 
-                color={newAcceptsBusinesses ? "#7E22CE" : "#94A3B8"} 
+              <Text style={styles.inputFieldLabel}>Título del Evento:</Text>
+              <TextInput
+                placeholder="Título de la junta (ej: Gran Junta Primavera Golden)"
+                placeholderTextColor="#94A3B8"
+                value={newTitle}
+                onChangeText={setNewTitle}
+                style={styles.modalInput}
               />
-              <Text style={styles.toggleBizText}>Permitir que tiendas y stands postulen a esta junta</Text>
-            </TouchableOpacity>
 
-            <TouchableOpacity style={styles.confirmButton} onPress={handleCreateNewEvent}>
-              <Text style={styles.confirmButtonText}>Publicar Junta Oficial</Text>
-            </TouchableOpacity>
+              {/* Sección de Ubicación con Selección en Mapa Gratuito */}
+              <View style={styles.locationHeaderRow}>
+                <Text style={styles.locationSectionTitle}>Ubicación y Encuentro:</Text>
+                <TouchableOpacity 
+                  style={styles.pickMapButton}
+                  onPress={() => setShowMapPickerModal(true)}
+                >
+                  <Ionicons name="map" size={14} color="#0284C7" />
+                  <Text style={styles.pickMapButtonText}>🗺️ Elegir del Mapa (Gratis)</Text>
+                </TouchableOpacity>
+              </View>
+
+              {geoCoords && (
+                <View style={styles.locationPickedFeedback}>
+                  <Ionicons name="checkmark-circle" size={16} color="#059669" />
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.locationPickedTitle}>📍 Punto fijado en OpenStreetMap (Gratuito)</Text>
+                    <Text style={styles.locationPickedSub}>{newPlace} • {newComuna}</Text>
+                  </View>
+                  <TouchableOpacity onPress={() => setShowMapPickerModal(true)}>
+                    <Text style={styles.changePointText}>Cambiar</Text>
+                  </TouchableOpacity>
+                </View>
+              )}
+
+              <TextInput
+                placeholder="Nombre del lugar (ej: Parque Inés de Suárez)"
+                placeholderTextColor="#94A3B8"
+                value={newPlace}
+                onChangeText={setNewPlace}
+                style={styles.modalInput}
+              />
+
+              <TextInput
+                placeholder="Dirección exacta (ej: Antonio Varas 1510)"
+                placeholderTextColor="#94A3B8"
+                value={newAddress}
+                onChangeText={setNewAddress}
+                style={styles.modalInput}
+              />
+
+              <TextInput
+                placeholder="Comuna (ej: Providencia, Las Condes, Santiago)"
+                placeholderTextColor="#94A3B8"
+                value={newComuna}
+                onChangeText={setNewComuna}
+                style={styles.modalInput}
+              />
+
+              <Text style={styles.inputFieldLabel}>Descripción y recomendaciones:</Text>
+              <TextInput
+                placeholder="Descripción, llevar agua, uso obligatorio de correa, etc."
+                placeholderTextColor="#94A3B8"
+                value={newDesc}
+                onChangeText={setNewDesc}
+                multiline
+                numberOfLines={3}
+                style={[styles.modalInput, { height: 60 }]}
+              />
+
+              <TouchableOpacity 
+                style={styles.toggleBizRow}
+                onPress={() => setNewAcceptsBusinesses(!newAcceptsBusinesses)}
+              >
+                <Ionicons 
+                  name={newAcceptsBusinesses ? "checkbox" : "square-outline"} 
+                  size={22} 
+                  color={newAcceptsBusinesses ? "#7E22CE" : "#94A3B8"} 
+                />
+                <Text style={styles.toggleBizText}>Permitir que tiendas y stands postulen a esta junta</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity style={styles.confirmButton} onPress={handleCreateNewEvent}>
+                <Text style={styles.confirmButtonText}>Publicar Junta Oficial</Text>
+              </TouchableOpacity>
+            </ScrollView>
           </View>
         </View>
       </Modal>
+
+      {/* Modal Selector de Ubicación en Mapa 100% Gratuito (OpenStreetMap + Leaflet + Nominatim) */}
+      <FreeMapPickerModal
+        visible={showMapPickerModal}
+        onClose={() => setShowMapPickerModal(false)}
+        initialPlaceName={newPlace}
+        initialAddress={newAddress}
+        initialComuna={newComuna}
+        onSelectLocation={(loc) => {
+          setNewPlace(loc.placeName);
+          setNewAddress(loc.address);
+          setNewComuna(loc.comuna);
+          setGeoCoords({ latitude: loc.latitude, longitude: loc.longitude });
+          setSelectedLocationInfo(loc);
+          showToast(`📍 Ubicación seleccionada: ${loc.placeName} (${loc.comuna})`, 'success');
+        }}
+      />
 
       {/* Modal de Asistentes y Comercios (Visualizar quiénes van a la junta) */}
       <Modal visible={showAttendeesModal} transparent animationType="slide">
@@ -1195,6 +1348,163 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontWeight: '700',
     fontSize: 12,
+  },
+  nonAdminInfoChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#F1F5F9',
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  nonAdminInfoText: {
+    fontSize: 10,
+    fontWeight: '600',
+    color: '#64748B',
+  },
+  convocantCommunityCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    backgroundColor: '#F0FDF4',
+    borderWidth: 1.5,
+    borderColor: '#86EFAC',
+    borderRadius: 14,
+    padding: 10,
+    marginBottom: 14,
+  },
+  convocantLogo: {
+    width: 38,
+    height: 38,
+    borderRadius: 10,
+    backgroundColor: '#E2E8F0',
+  },
+  convocantLead: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#166534',
+    textTransform: 'uppercase',
+  },
+  convocantName: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: '#0F172A',
+  },
+  adminVerifiedBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#DCFCE7',
+    paddingHorizontal: 6,
+    paddingVertical: 3,
+    borderRadius: 6,
+  },
+  adminVerifiedText: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#15803D',
+  },
+  selectCommunitySection: {
+    marginBottom: 14,
+  },
+  selectCommunityLead: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#475569',
+    marginBottom: 6,
+  },
+  commSelectChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1.5,
+    borderColor: '#E2E8F0',
+    borderRadius: 12,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+  commSelectChipActive: {
+    backgroundColor: '#E0F2FE',
+    borderColor: '#0284C7',
+  },
+  commSelectThumb: {
+    width: 22,
+    height: 22,
+    borderRadius: 6,
+    backgroundColor: '#E2E8F0',
+  },
+  commSelectText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#475569',
+  },
+  commSelectTextActive: {
+    color: '#0284C7',
+    fontWeight: '800',
+  },
+  inputFieldLabel: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#334155',
+    marginBottom: 4,
+    marginTop: 4,
+  },
+  locationHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginTop: 4,
+    marginBottom: 6,
+  },
+  locationSectionTitle: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#334155',
+  },
+  pickMapButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#E0F2FE',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#BAE6FD',
+  },
+  pickMapButtonText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#0284C7',
+  },
+  locationPickedFeedback: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: '#F0FDF4',
+    borderWidth: 1,
+    borderColor: '#BBF7D0',
+    borderRadius: 10,
+    padding: 8,
+    marginBottom: 8,
+  },
+  locationPickedTitle: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#15803D',
+  },
+  locationPickedSub: {
+    fontSize: 11,
+    color: '#166534',
+  },
+  changePointText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#0284C7',
   },
   noDogsBox: {
     backgroundColor: '#FFFBEB',

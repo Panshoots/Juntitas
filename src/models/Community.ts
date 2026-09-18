@@ -33,6 +33,7 @@ export interface Community {
   slug: string;
   logoUrl: string;
   bannerUrl?: string;
+  coverPhotoUrl?: string;
   description: string;
   instagramHandle?: string;
   websiteUrl?: string;
