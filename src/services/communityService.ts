@@ -11,7 +11,7 @@ import {
   increment
 } from 'firebase/firestore';
 import { db } from '../firebase/config';
-import { Community, CommunityRequest, SecondaryAdminPermissions } from '../models/Community';
+import { Community, CommunityRequest, SecondaryAdminPermissions, SecondaryAdminInfo } from '../models/Community';
 import { logAuditAction } from './auditService';
 
 let localCommunities: Community[] = [];

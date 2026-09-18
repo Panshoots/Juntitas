@@ -38,12 +38,12 @@ export const EventsScreen: React.FC = () => {
   const [showRegisterModal, setShowRegisterModal] = useState(false);
   const [showCreateEventModal, setShowCreateEventModal] = useState(false);
 
-  // Modal de Visualización de Asistentes y Comercios
+  // Modal de Visualización Separada de Tutores, Perritos y Comercios
   const [showAttendeesModal, setShowAttendeesModal] = useState(false);
-  const [attendeesModalTab, setAttendeesModalTab] = useState<'attendees' | 'businesses'>('attendees');
+  const [attendeesModalTab, setAttendeesModalTab] = useState<'tutors' | 'dogs' | 'businesses'>('tutors');
   const [selectedEventForAttendees, setSelectedEventForAttendees] = useState<DogEvent | null>(null);
 
-  const handleOpenAttendeesModal = (event: DogEvent, initialTab: 'attendees' | 'businesses' = 'attendees') => {
+  const handleOpenAttendeesModal = (event: DogEvent, initialTab: 'tutors' | 'dogs' | 'businesses' = 'tutors') => {
     setSelectedEventForAttendees(event);
     setAttendeesModalTab(initialTab);
     setShowAttendeesModal(true);
@@ -301,7 +301,7 @@ export const EventsScreen: React.FC = () => {
                 <View style={styles.countsRow}>
                   <TouchableOpacity 
                     style={styles.countBadge}
-                    onPress={() => handleOpenAttendeesModal(item, 'attendees')}
+                    onPress={() => handleOpenAttendeesModal(item, 'tutors')}
                     activeOpacity={0.7}
                   >
                     <Ionicons name="person" size={13} color="#475569" />
@@ -311,7 +311,7 @@ export const EventsScreen: React.FC = () => {
 
                   <TouchableOpacity 
                     style={[styles.countBadge, { backgroundColor: '#FEF3C7' }]}
-                    onPress={() => handleOpenAttendeesModal(item, 'attendees')}
+                    onPress={() => handleOpenAttendeesModal(item, 'dogs')}
                     activeOpacity={0.7}
                   >
                     <Ionicons name="paw" size={13} color="#D97706" />
@@ -547,30 +547,40 @@ export const EventsScreen: React.FC = () => {
             {/* Subtabs de Navegación del Modal */}
             <View style={styles.attendeesTabRow}>
               <TouchableOpacity 
-                style={[styles.attendeesTabBtn, attendeesModalTab === 'attendees' && styles.attendeesTabBtnActive]}
-                onPress={() => setAttendeesModalTab('attendees')}
+                style={[styles.attendeesTabBtn, attendeesModalTab === 'tutors' && styles.attendeesTabBtnActive]}
+                onPress={() => setAttendeesModalTab('tutors')}
               >
-                <Ionicons name="people" size={15} color={attendeesModalTab === 'attendees' ? '#0284C7' : '#64748B'} />
-                <Text style={[styles.attendeesTabBtnText, attendeesModalTab === 'attendees' && styles.attendeesTabBtnTextActive]}>
-                  Tutores & Perritos ({selectedEventForAttendees?.tutorsCount || 0})
+                <Ionicons name="person" size={14} color={attendeesModalTab === 'tutors' ? '#0284C7' : '#64748B'} />
+                <Text style={[styles.attendeesTabBtnText, attendeesModalTab === 'tutors' && styles.attendeesTabBtnTextActive]}>
+                  Tutores ({selectedEventForAttendees?.tutorsCount || 6})
                 </Text>
               </TouchableOpacity>
 
               <TouchableOpacity 
-                style={[styles.attendeesTabBtn, attendeesModalTab === 'businesses' && styles.attendeesTabBtnActive]}
+                style={[styles.attendeesTabBtn, attendeesModalTab === 'dogs' && { backgroundColor: '#FEF3C7' }]}
+                onPress={() => setAttendeesModalTab('dogs')}
+              >
+                <Ionicons name="paw" size={14} color={attendeesModalTab === 'dogs' ? '#D97706' : '#64748B'} />
+                <Text style={[styles.attendeesTabBtnText, attendeesModalTab === 'dogs' && styles.attendeesTabDogBtnTextActive]}>
+                  Perritos ({selectedEventForAttendees?.dogsCount || 7})
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity 
+                style={[styles.attendeesTabBtn, attendeesModalTab === 'businesses' && { backgroundColor: '#F3E8FF' }]}
                 onPress={() => setAttendeesModalTab('businesses')}
               >
-                <Ionicons name="storefront" size={15} color={attendeesModalTab === 'businesses' ? '#0284C7' : '#64748B'} />
-                <Text style={[styles.attendeesTabBtnText, attendeesModalTab === 'businesses' && styles.attendeesTabBtnTextActive]}>
-                  Comercios & Stands
+                <Ionicons name="storefront" size={14} color={attendeesModalTab === 'businesses' ? '#7E22CE' : '#64748B'} />
+                <Text style={[styles.attendeesTabBtnText, attendeesModalTab === 'businesses' && styles.attendeesTabBizBtnTextActive]}>
+                  Comercios
                 </Text>
               </TouchableOpacity>
             </View>
 
-            {/* Contenido Pestaña 1: Tutores y Perritos */}
-            {attendeesModalTab === 'attendees' && (
+            {/* Contenido Pestaña 1: Tutores */}
+            {attendeesModalTab === 'tutors' && (
               <ScrollView style={{ maxHeight: 420 }} showsVerticalScrollIndicator={false}>
-                {/* Si el usuario actual está inscrito */}
+                {/* Si el usuario actual está inscrito como tutor */}
                 {(() => {
                   if (!selectedEventForAttendees) return null;
                   const myAtt = attendancesMap[selectedEventForAttendees.id];
@@ -589,11 +599,11 @@ export const EventsScreen: React.FC = () => {
                           <View style={{ flexDirection: 'row', alignItems: 'center' }}>
                             <Text style={styles.attendeeName}>{currentUser.displayName} (Tú)</Text>
                             <View style={styles.myStatusBadge}>
-                              <Text style={styles.myStatusBadgeText}>Confirmado</Text>
+                              <Text style={styles.myStatusBadgeText}>Confirmado ✅</Text>
                             </View>
                           </View>
                           <Text style={styles.attendeeSubtitle}>
-                            🐾 Asistes con {myAtt ? myAtt.map(d => d.name).join(' y ') : 'tu perrito'}
+                            👤 Tutor Oficial • Asistes con {myAtt ? myAtt.map(d => d.name).join(' y ') : 'tu perrito'}
                           </Text>
                         </View>
                       </View>
@@ -602,47 +612,52 @@ export const EventsScreen: React.FC = () => {
                 })()}
 
                 <Text style={styles.attendeesSectionHeader}>
-                  Tutores y perritos confirmados para esta junta:
+                  Tutores confirmados para esta junta:
                 </Text>
 
-                {/* Lista de Tutores y sus Perritos */}
+                {/* Lista de Tutores */}
                 {[
                   {
                     id: 'att-1',
                     name: 'Camila Valenzuela',
+                    comuna: 'Providencia',
                     avatar: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=150',
                     dogs: [
-                      { name: 'Milo', breed: 'Golden Retriever', photo: 'https://images.unsplash.com/photo-1552053831-71594a27632d?w=200', role: 'Socializador' }
+                      { name: 'Milo', breed: 'Golden Retriever', photo: 'https://images.unsplash.com/photo-1552053831-71594a27632d?w=200', role: 'Socializador y Juguetón' }
                     ]
                   },
                   {
                     id: 'att-2',
                     name: 'Diego Silva',
+                    comuna: 'Ñuñoa',
                     avatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150',
                     dogs: [
-                      { name: 'Bruno', breed: 'Beagle', photo: 'https://images.unsplash.com/photo-1537151608828-ea2b11777ee8?w=200', role: 'Explorador' }
+                      { name: 'Bruno', breed: 'Beagle', photo: 'https://images.unsplash.com/photo-1537151608828-ea2b11777ee8?w=200', role: 'Explorador Curioso' }
                     ]
                   },
                   {
                     id: 'att-3',
                     name: 'Macarena Fuenzalida',
+                    comuna: 'Las Condes',
                     avatar: 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=150',
                     dogs: [
-                      { name: 'Simba', breed: 'Pug', photo: 'https://images.unsplash.com/photo-1517849845537-4d257902454a?w=200', role: 'Dormilón Alegre' },
-                      { name: 'Kira', breed: 'Shih Tzu', photo: 'https://images.unsplash.com/photo-1583511655857-d19b40a7a54e?w=200', role: 'Cariñosa' }
+                      { name: 'Simba', breed: 'Pug', photo: 'https://images.unsplash.com/photo-1517849845537-4d257902454a?w=200', role: 'Tranquilo y Regalón' },
+                      { name: 'Kira', breed: 'Shih Tzu', photo: 'https://images.unsplash.com/photo-1583511655857-d19b40a7a54e?w=200', role: 'Cariñosa y Tímida' }
                     ]
                   },
                   {
                     id: 'att-4',
                     name: 'Jorge Alarcón',
+                    comuna: 'Santiago Centro',
                     avatar: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=150',
                     dogs: [
-                      { name: 'Thor', breed: 'Pastor Alemán', photo: 'https://images.unsplash.com/photo-1589941013453-ec89f33b5455?w=200', role: 'Guardián Amigable' }
+                      { name: 'Thor', breed: 'Pastor Alemán', photo: 'https://images.unsplash.com/photo-1589941013453-ec89f33b5455?w=200', role: 'Protector Noble' }
                     ]
                   },
                   {
                     id: 'att-5',
                     name: 'Ignacia Morales',
+                    comuna: 'La Reina',
                     avatar: 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?w=150',
                     dogs: [
                       { name: 'Bella', breed: 'Border Collie', photo: 'https://images.unsplash.com/photo-1518717758536-85ae29035b6d?w=200', role: 'Ágil y Juguetona' }
@@ -651,9 +666,10 @@ export const EventsScreen: React.FC = () => {
                   {
                     id: 'att-6',
                     name: 'Felipe Navarro',
+                    comuna: 'Vitacura',
                     avatar: 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=150',
                     dogs: [
-                      { name: 'Toby', breed: 'Jack Russell Terrier', photo: 'https://images.unsplash.com/photo-1543466835-00a7907e9de1?w=200', role: 'Corredor Experto' }
+                      { name: 'Toby', breed: 'Jack Russell Terrier', photo: 'https://images.unsplash.com/photo-1543466835-00a7907e9de1?w=200', role: 'Veloz Corredor' }
                     ]
                   }
                 ].map(att => (
@@ -665,21 +681,173 @@ export const EventsScreen: React.FC = () => {
                           <Text style={styles.attendeeName}>{att.name}</Text>
                           <Ionicons name="checkmark-circle" size={14} color="#0284C7" style={{ marginLeft: 4 }} />
                         </View>
-                        <Text style={styles.attendeeSubtitle}>Tutor Oficial Confirmado</Text>
+                        <Text style={styles.attendeeSubtitle}>Tutor Oficial • Comuna: {att.comuna}</Text>
                       </View>
                     </View>
 
-                    {/* Perritos del Tutor */}
+                    {/* Perritos a cargo de este Tutor */}
                     <View style={styles.attendeeDogsRow}>
+                      <Text style={styles.tutorDogsLead}>🐾 Acompañado por:</Text>
                       {att.dogs.map((dog, dIdx) => (
                         <View key={dIdx} style={styles.attendeeDogChip}>
                           <Image source={{ uri: dog.photo }} style={styles.attendeeDogThumb} />
                           <View>
-                            <Text style={styles.attendeeDogName}>🐾 {dog.name}</Text>
+                            <Text style={styles.attendeeDogName}>{dog.name}</Text>
                             <Text style={styles.attendeeDogBreed}>{dog.breed} • {dog.role}</Text>
                           </View>
                         </View>
                       ))}
+                    </View>
+                  </View>
+                ))}
+              </ScrollView>
+            )}
+
+            {/* Contenido Pestaña 2: Perritos */}
+            {attendeesModalTab === 'dogs' && (
+              <ScrollView style={{ maxHeight: 420 }} showsVerticalScrollIndicator={false}>
+                {/* Si el usuario actual tiene perrito(s) inscritos */}
+                {(() => {
+                  if (!selectedEventForAttendees) return null;
+                  const myAtt = attendancesMap[selectedEventForAttendees.id];
+                  const isEnrolled = !!myAtt || selectedEventForAttendees.attendeeUserIds?.includes(currentUser?.id);
+
+                  if (!isEnrolled) return null;
+
+                  const enrolledDogs: Array<{ name: string; breed?: string; photo?: string }> = (myAtt && myAtt.length > 0)
+                    ? myAtt.map(d => ({ name: d.name, breed: d.breed, photo: d.photoUrl }))
+                    : currentDogs.slice(0, 1).map(d => ({ name: d.name, breed: d.breed, photo: d.photoUrls?.[0] }));
+
+                  return (
+                    <View style={styles.myDogBannerCard}>
+                      <Text style={styles.myDogBannerTitle}>🐾 ¡Tu(s) Perrito(s) en esta Junta!</Text>
+                      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 8 }}>
+                        {enrolledDogs.map((d, i) => (
+                          <View key={i} style={styles.myDogChip}>
+                            <Image 
+                              source={{ uri: d.photo || 'https://images.unsplash.com/photo-1543466835-00a7907e9de1?w=200' }} 
+                              style={styles.myDogThumb} 
+                            />
+                            <View>
+                              <Text style={styles.myDogChipName}>{d.name}</Text>
+                              <Text style={styles.myDogChipBreed}>{d.breed || 'Perrito Inscrito'} • Confirmado ✅</Text>
+                            </View>
+                          </View>
+                        ))}
+                      </View>
+                    </View>
+                  );
+                })()}
+
+                <Text style={styles.attendeesSectionHeader}>
+                  Perritos que estarán jugando y socializando:
+                </Text>
+
+                {/* Lista individual de perritos */}
+                {[
+                  {
+                    id: 'dog-1',
+                    name: 'Milo',
+                    breed: 'Golden Retriever',
+                    age: '2 años',
+                    role: 'Socializador y Juguetón',
+                    photo: 'https://images.unsplash.com/photo-1552053831-71594a27632d?w=200',
+                    tutorName: 'Camila Valenzuela',
+                    tutorAvatar: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=150',
+                    comuna: 'Providencia',
+                    medal: '🏅 Pasaporte de Oro'
+                  },
+                  {
+                    id: 'dog-2',
+                    name: 'Bruno',
+                    breed: 'Beagle',
+                    age: '3 años',
+                    role: 'Explorador Curioso',
+                    photo: 'https://images.unsplash.com/photo-1537151608828-ea2b11777ee8?w=200',
+                    tutorName: 'Diego Silva',
+                    tutorAvatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150',
+                    comuna: 'Ñuñoa',
+                    medal: '⭐ Socializador Frecuente'
+                  },
+                  {
+                    id: 'dog-3',
+                    name: 'Simba',
+                    breed: 'Pug',
+                    age: '4 años',
+                    role: 'Tranquilo y Regalón',
+                    photo: 'https://images.unsplash.com/photo-1517849845537-4d257902454a?w=200',
+                    tutorName: 'Macarena Fuenzalida',
+                    tutorAvatar: 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=150',
+                    comuna: 'Las Condes',
+                    medal: '🏅 Pasaporte de Plata'
+                  },
+                  {
+                    id: 'dog-4',
+                    name: 'Kira',
+                    breed: 'Shih Tzu',
+                    age: '1 año',
+                    role: 'Cariñosa y Tímida',
+                    photo: 'https://images.unsplash.com/photo-1583511655857-d19b40a7a54e?w=200',
+                    tutorName: 'Macarena Fuenzalida',
+                    tutorAvatar: 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=150',
+                    comuna: 'Las Condes',
+                    medal: '✨ Debutante Canino'
+                  },
+                  {
+                    id: 'dog-5',
+                    name: 'Thor',
+                    breed: 'Pastor Alemán',
+                    age: '5 años',
+                    role: 'Protector Noble',
+                    photo: 'https://images.unsplash.com/photo-1589941013453-ec89f33b5455?w=200',
+                    tutorName: 'Jorge Alarcón',
+                    tutorAvatar: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=150',
+                    comuna: 'Santiago Centro',
+                    medal: '🏅 Pasaporte de Oro'
+                  },
+                  {
+                    id: 'dog-6',
+                    name: 'Bella',
+                    breed: 'Border Collie',
+                    age: '2 años',
+                    role: 'Ágil y Super Activa',
+                    photo: 'https://images.unsplash.com/photo-1518717758536-85ae29035b6d?w=200',
+                    tutorName: 'Ignacia Morales',
+                    tutorAvatar: 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?w=150',
+                    comuna: 'La Reina',
+                    medal: '⭐ Estrella de la Junta'
+                  },
+                  {
+                    id: 'dog-7',
+                    name: 'Toby',
+                    breed: 'Jack Russell Terrier',
+                    age: '3 años',
+                    role: 'Veloz Corredor',
+                    photo: 'https://images.unsplash.com/photo-1543466835-00a7907e9de1?w=200',
+                    tutorName: 'Felipe Navarro',
+                    tutorAvatar: 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=150',
+                    comuna: 'Vitacura',
+                    medal: '🏅 Pasaporte de Plata'
+                  }
+                ].map((dog, dIdx) => (
+                  <View key={dog.id || dIdx} style={styles.dogAttendeeCard}>
+                    <Image source={{ uri: dog.photo }} style={styles.dogAttendeePhoto} />
+                    <View style={{ flex: 1, marginLeft: 12 }}>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+                        <Text style={styles.dogAttendeeName}>🐾 {dog.name}</Text>
+                        <View style={styles.dogPassportBadge}>
+                          <Ionicons name="ribbon" size={11} color="#B45309" />
+                          <Text style={styles.dogPassportBadgeText}>{dog.medal}</Text>
+                        </View>
+                      </View>
+                      <Text style={styles.dogAttendeeBreed}>{dog.breed} • {dog.age} • {dog.role}</Text>
+                      
+                      <View style={styles.dogAttendeeTutorRow}>
+                        <Image source={{ uri: dog.tutorAvatar }} style={styles.dogAttendeeTutorAvatar} />
+                        <Text style={styles.dogAttendeeTutorText}>
+                          Tutor: <Text style={{ fontWeight: '700', color: '#334155' }}>{dog.tutorName}</Text> ({dog.comuna})
+                        </Text>
+                      </View>
                     </View>
                   </View>
                 ))}
@@ -1153,12 +1321,20 @@ const styles = StyleSheet.create({
     backgroundColor: '#E0F2FE',
   },
   attendeesTabBtnText: {
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: '600',
     color: '#64748B',
   },
   attendeesTabBtnTextActive: {
     color: '#0284C7',
+    fontWeight: '800',
+  },
+  attendeesTabDogBtnTextActive: {
+    color: '#B45309',
+    fontWeight: '800',
+  },
+  attendeesTabBizBtnTextActive: {
+    color: '#7E22CE',
     fontWeight: '800',
   },
   myAttendanceBannerCard: {
@@ -1249,6 +1425,111 @@ const styles = StyleSheet.create({
   },
   attendeeDogBreed: {
     fontSize: 10,
+    color: '#64748B',
+  },
+  tutorDogsLead: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#475569',
+    width: '100%',
+    marginBottom: 2,
+  },
+  myDogBannerCard: {
+    backgroundColor: '#FEF3C7',
+    borderWidth: 1.5,
+    borderColor: '#FCD34D',
+    borderRadius: 14,
+    padding: 12,
+    marginBottom: 12,
+  },
+  myDogBannerTitle: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#92400E',
+  },
+  myDogChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#FDE68A',
+    borderRadius: 10,
+    padding: 6,
+    paddingRight: 10,
+  },
+  myDogThumb: {
+    width: 32,
+    height: 32,
+    borderRadius: 8,
+    backgroundColor: '#E2E8F0',
+  },
+  myDogChipName: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: '#78350F',
+  },
+  myDogChipBreed: {
+    fontSize: 10,
+    color: '#B45309',
+  },
+  dogAttendeeCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    padding: 12,
+    marginBottom: 10,
+  },
+  dogAttendeePhoto: {
+    width: 56,
+    height: 56,
+    borderRadius: 14,
+    backgroundColor: '#E2E8F0',
+  },
+  dogAttendeeName: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: '#0F172A',
+  },
+  dogPassportBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#FEF3C7',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
+  },
+  dogPassportBadgeText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#B45309',
+  },
+  dogAttendeeBreed: {
+    fontSize: 11,
+    color: '#64748B',
+    marginTop: 2,
+  },
+  dogAttendeeTutorRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: 6,
+    paddingTop: 6,
+    borderTopWidth: 1,
+    borderTopColor: '#F1F5F9',
+  },
+  dogAttendeeTutorAvatar: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    backgroundColor: '#CBD5E1',
+  },
+  dogAttendeeTutorText: {
+    fontSize: 11,
     color: '#64748B',
   },
   businessStandCard: {

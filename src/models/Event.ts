@@ -18,6 +18,8 @@ export interface EventLocation {
     latitude: number;
     longitude: number;
   };
+  comuna?: string;
+  region?: string;
 }
 
 export interface EventChangeRecord {
@@ -72,6 +74,7 @@ export interface DogEvent {
   title: string;
   description: string;
   coverPhotoUrl: string;
+  creatorUserId?: string;
   status: EventStatus;
   startDate: any;
   endDate: any;
