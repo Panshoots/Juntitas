@@ -29,6 +29,8 @@ export interface CommunityPhoto {
   caption: string;
   likesCount: number;
   likedBy?: string[];
+  status?: 'active' | 'blocked';
+  moderationReason?: string;
   createdAt: any;
 }
 
@@ -44,6 +46,7 @@ let localPhotos: CommunityPhoto[] = [
     caption: '¡Disfrutando la tarde en el Parque Bicentenario con la manada!',
     likesCount: 14,
     likedBy: [],
+    status: 'active',
     createdAt: new Date()
   },
   {
@@ -57,11 +60,12 @@ let localPhotos: CommunityPhoto[] = [
     caption: 'Listos para la próxima junta oficial de este fin de semana.',
     likesCount: 9,
     likedBy: [],
+    status: 'active',
     createdAt: new Date()
   }
 ];
 
-export const getCommunityPhotos = async (communityId?: string): Promise<CommunityPhoto[]> => {
+export const getCommunityPhotos = async (communityId?: string, includeBlocked?: boolean): Promise<CommunityPhoto[]> => {
   try {
     const coll = collection(db, 'communityPhotos');
     const q = communityId 
@@ -85,16 +89,20 @@ export const getCommunityPhotos = async (communityId?: string): Promise<Communit
           caption: data.caption || '',
           likesCount: data.likesCount || 0,
           likedBy: data.likedBy || [],
+          status: data.status || 'active',
+          moderationReason: data.moderationReason || '',
           createdAt: data.createdAt?.toDate ? data.createdAt.toDate() : new Date()
         });
       });
       localPhotos = list;
-      return list;
+      const filtered = includeBlocked ? list : list.filter(p => p.status !== 'blocked');
+      return communityId ? filtered.filter(p => p.communityId === communityId) : filtered;
     }
   } catch (err) {
     console.warn('Leyendo fotos comunitarias locales:', err);
   }
-  return communityId ? localPhotos.filter(p => p.communityId === communityId) : [...localPhotos];
+  const filteredLocal = includeBlocked ? localPhotos : localPhotos.filter(p => p.status !== 'blocked');
+  return communityId ? filteredLocal.filter(p => p.communityId === communityId) : [...filteredLocal];
 };
 
 export const uploadCommunityPhoto = async (photoData: {
@@ -169,6 +177,59 @@ export const deleteCommunityPhoto = async (
   );
 
   return { success: true, message: 'Foto eliminada de la galería comunitaria.' };
+};
+
+export const moderateCommunityPhoto = async (
+  photoId: string,
+  action: 'block' | 'activate' | 'edit_caption',
+  adminUserId: string,
+  reasonOrNewCaption: string
+): Promise<{ success: boolean; message: string }> => {
+  const photo = localPhotos.find(p => p.id === photoId);
+  if (!photo) return { success: false, message: 'Foto no encontrada.' };
+
+  const updates: any = {};
+  if (action === 'block') {
+    updates.status = 'blocked';
+    updates.moderationReason = reasonOrNewCaption;
+    photo.status = 'blocked';
+    photo.moderationReason = reasonOrNewCaption;
+  } else if (action === 'activate') {
+    updates.status = 'active';
+    updates.moderationReason = '';
+    photo.status = 'active';
+    photo.moderationReason = '';
+  } else if (action === 'edit_caption') {
+    updates.caption = reasonOrNewCaption;
+    photo.caption = reasonOrNewCaption;
+  }
+
+  try {
+    const photoRef = doc(db, 'communityPhotos', photoId);
+    await updateDoc(photoRef, {
+      ...updates,
+      updatedAt: serverTimestamp()
+    });
+  } catch (err) {
+    console.warn('Moderando foto localmente:', err);
+  }
+
+  await logAuditAction(
+    adminUserId,
+    `COMMUNITY_PHOTO_${action.toUpperCase()}`,
+    'communityPhotos',
+    photoId,
+    `Acción: ${action}. Detalle/Motivo: ${reasonOrNewCaption}`
+  );
+
+  return { 
+    success: true, 
+    message: action === 'block' 
+      ? 'Foto bloqueada por no cumplir las normas legales/comunitarias.' 
+      : action === 'activate' 
+        ? 'Foto reactivada y visible.' 
+        : 'Pie de foto actualizado correctamente.' 
+  };
 };
 
 /**

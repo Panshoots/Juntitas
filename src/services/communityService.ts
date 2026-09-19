@@ -526,3 +526,42 @@ export const getManagedCommunitiesForUser = async (
     return false;
   });
 };
+
+export const updateCommunityPhotosAndInfo = async (
+  communityId: string,
+  updates: {
+    logoUrl?: string;
+    coverPhotoUrl?: string;
+    description?: string;
+    instagramHandle?: string;
+  },
+  adminUserId: string
+): Promise<{ success: boolean; message: string }> => {
+  try {
+    const commRef = doc(db, 'communities', communityId);
+    await updateDoc(commRef, {
+      ...updates,
+      updatedAt: serverTimestamp()
+    });
+  } catch (err) {
+    console.warn('Actualizando foto/info de comunidad en Firestore:', err);
+  }
+
+  const local = localCommunities.find(c => c.id === communityId);
+  if (local) {
+    if (updates.logoUrl) local.logoUrl = updates.logoUrl;
+    if (updates.coverPhotoUrl) local.coverPhotoUrl = updates.coverPhotoUrl;
+    if (updates.description) local.description = updates.description;
+    if (updates.instagramHandle) local.instagramHandle = updates.instagramHandle;
+  }
+
+  await logAuditAction(
+    adminUserId,
+    'COMMUNITY_UPDATE_PHOTO_INFO',
+    'communities',
+    communityId,
+    `Administrador ${adminUserId} actualizó imagen/información de la comunidad ${communityId}`
+  );
+
+  return { success: true, message: '¡Foto e información de la comunidad actualizadas exitosamente!' };
+};

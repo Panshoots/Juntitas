@@ -23,13 +23,15 @@ import {
   updateSecondaryAdminPermissions,
   removeSecondaryAdmin,
   addSecondaryAdmin,
-  DEFAULT_SECONDARY_PERMISSIONS
+  DEFAULT_SECONDARY_PERMISSIONS,
+  updateCommunityPhotosAndInfo
 } from '../services/communityService';
 import { 
   getCommunityPhotos, 
   uploadCommunityPhoto, 
   deleteCommunityPhoto, 
   toggleLikeCommunityPhoto,
+  moderateCommunityPhoto,
   CommunityPhoto 
 } from '../services/communityPhotoService';
 import { Dog } from '../models/Dog';
@@ -97,7 +99,24 @@ export const CommunitiesScreen: React.FC = () => {
   const [allGlobalDogs, setAllGlobalDogs] = useState<Dog[]>([]);
   const [communityEvents, setCommunityEvents] = useState<DogEvent[]>([]);
 
+  // Estados para cambiar foto de comunidad por administrador
+  const [showEditCommPhotoModal, setShowEditCommPhotoModal] = useState(false);
+  const [selectedCommForPhoto, setSelectedCommForPhoto] = useState<Community | null>(null);
+  const [editLogoUrl, setEditLogoUrl] = useState('');
+  const [editCoverUrl, setEditCoverUrl] = useState('');
+  const [savingCommPhoto, setSavingCommPhoto] = useState(false);
+
+  // Estados para moderación de fotos (bloqueo legal y edición de pie de foto)
+  const [photoToModerate, setPhotoToModerate] = useState<CommunityPhoto | null>(null);
+  const [showBlockPhotoModal, setShowBlockPhotoModal] = useState(false);
+  const [blockReason, setBlockReason] = useState('');
+  const [showEditCaptionModal, setShowEditCaptionModal] = useState(false);
+  const [editCaptionText, setEditCaptionText] = useState('');
+  const [moderatingPhoto, setModeratingPhoto] = useState(false);
+
   const [refreshing, setRefreshing] = useState(false);
+
+  const canModerate = isSuperAdmin || activeProfile.roleType === 'primary_admin' || activeProfile.roleType === 'secondary_admin';
 
   useEffect(() => {
     loadCommunities();
@@ -113,7 +132,8 @@ export const CommunitiesScreen: React.FC = () => {
   };
 
   const loadPhotos = async () => {
-    const data = await getCommunityPhotos();
+    const canSeeBlocked = isSuperAdmin || activeProfile.roleType === 'primary_admin' || activeProfile.roleType === 'secondary_admin';
+    const data = await getCommunityPhotos(undefined, canSeeBlocked);
     setPhotos(data);
   };
 
@@ -121,6 +141,100 @@ export const CommunitiesScreen: React.FC = () => {
     setRefreshing(true);
     await Promise.all([loadCommunities(), loadPhotos()]);
     setRefreshing(false);
+  };
+
+  const handleOpenEditCommPhoto = (comm: Community) => {
+    setSelectedCommForPhoto(comm);
+    setEditLogoUrl(comm.logoUrl || '');
+    setEditCoverUrl(comm.coverPhotoUrl || '');
+    setShowEditCommPhotoModal(true);
+  };
+
+  const handlePickLogoFromGallery = async () => {
+    const res = await pickFromGallery();
+    if (res.success && res.uri) setEditLogoUrl(res.uri);
+  };
+
+  const handleTakeLogoWithCamera = async () => {
+    const res = await takePhoto();
+    if (res.success && res.uri) setEditLogoUrl(res.uri);
+  };
+
+  const handleSaveCommunityPhoto = async () => {
+    if (!selectedCommForPhoto) return;
+    if (!editLogoUrl.trim()) {
+      showToast('Por favor ingresa o selecciona una imagen válida.', 'warning');
+      return;
+    }
+    setSavingCommPhoto(true);
+    const res = await updateCommunityPhotosAndInfo(
+      selectedCommForPhoto.id, 
+      { logoUrl: editLogoUrl, coverPhotoUrl: editCoverUrl }, 
+      currentUser.id
+    );
+    setSavingCommPhoto(false);
+    showToast(res.message, res.success ? 'success' : 'error');
+    if (res.success) {
+      setShowEditCommPhotoModal(false);
+      loadCommunities();
+      if (selectedCommunityDetail && selectedCommunityDetail.id === selectedCommForPhoto.id) {
+        setSelectedCommunityDetail(prev => prev ? ({ ...prev, logoUrl: editLogoUrl, coverPhotoUrl: editCoverUrl }) : null);
+      }
+    }
+  };
+
+  const handleOpenBlockPhoto = (photo: CommunityPhoto) => {
+    setPhotoToModerate(photo);
+    setBlockReason('');
+    setShowBlockPhotoModal(true);
+  };
+
+  const handleConfirmBlockPhoto = async () => {
+    if (!photoToModerate) return;
+    if (!blockReason.trim()) {
+      showToast('Debes ingresar el motivo de incumplimiento legal o normativo.', 'warning');
+      return;
+    }
+    setModeratingPhoto(true);
+    const res = await moderateCommunityPhoto(photoToModerate.id, 'block', currentUser.id, blockReason);
+    setModeratingPhoto(false);
+    showToast(res.message, res.success ? 'warning' : 'error');
+    if (res.success) {
+      setShowBlockPhotoModal(false);
+      setPhotoToModerate(null);
+      loadPhotos();
+    }
+  };
+
+  const handleOpenEditCaption = (photo: CommunityPhoto) => {
+    setPhotoToModerate(photo);
+    setEditCaptionText(photo.caption || '');
+    setShowEditCaptionModal(true);
+  };
+
+  const handleConfirmEditCaption = async () => {
+    if (!photoToModerate) return;
+    if (!editCaptionText.trim()) {
+      showToast('La descripción de la foto no puede quedar vacía.', 'warning');
+      return;
+    }
+    setModeratingPhoto(true);
+    const res = await moderateCommunityPhoto(photoToModerate.id, 'edit_caption', currentUser.id, editCaptionText);
+    setModeratingPhoto(false);
+    showToast(res.message, res.success ? 'success' : 'error');
+    if (res.success) {
+      setShowEditCaptionModal(false);
+      setPhotoToModerate(null);
+      loadPhotos();
+    }
+  };
+
+  const handleReactivatePhoto = async (photo: CommunityPhoto) => {
+    const res = await moderateCommunityPhoto(photo.id, 'activate', currentUser.id, 'Reactivada por administrador');
+    showToast(res.message, res.success ? 'success' : 'error');
+    if (res.success) {
+      loadPhotos();
+    }
   };
 
   const handleSelectRegion = (reg: ChileRegion) => {
@@ -530,14 +644,24 @@ export const CommunitiesScreen: React.FC = () => {
                       </View>
                     </View>
 
-                    {isPrimary && (
-                      <TouchableOpacity 
-                        style={styles.manageSecAdminsButton}
-                        onPress={() => handleOpenAdminModal(item)}
-                      >
-                        <Ionicons name="people-circle" size={16} color="#B45309" />
-                        <Text style={styles.manageSecAdminsText}>Gestionar Administradores Secundarios</Text>
-                      </TouchableOpacity>
+                    {(isPrimary || isSuperAdmin) && (
+                      <View style={{ flexDirection: 'row', gap: 8, marginTop: 10 }}>
+                        <TouchableOpacity 
+                          style={[styles.manageSecAdminsButton, { flex: 1, marginTop: 0 }]}
+                          onPress={() => handleOpenAdminModal(item)}
+                        >
+                          <Ionicons name="people-circle" size={15} color="#B45309" />
+                          <Text style={styles.manageSecAdminsText}>Administradores</Text>
+                        </TouchableOpacity>
+
+                        <TouchableOpacity 
+                          style={styles.changeCommPhotoBtn}
+                          onPress={() => handleOpenEditCommPhoto(item)}
+                        >
+                          <Ionicons name="camera" size={14} color="#0284C7" />
+                          <Text style={styles.changeCommPhotoBtnText}>Cambiar Foto</Text>
+                        </TouchableOpacity>
+                      </View>
                     )}
                   </View>
                 </TouchableOpacity>
@@ -584,17 +708,53 @@ export const CommunitiesScreen: React.FC = () => {
                       <Text style={styles.photoDogTag}>🐾 Con {item.dogName || 'su perrito'}</Text>
                     </View>
 
-                    {/* Botón de Moderación para Administradores */}
+                    {/* Botones de Moderación para Administradores */}
                     {canModerate && (
-                      <TouchableOpacity 
-                        style={styles.modDeleteBtn}
-                        onPress={() => handleDeletePhoto(item.id)}
-                      >
-                        <Ionicons name="trash" size={14} color="#DC2626" />
-                        <Text style={styles.modDeleteText}>Moderar</Text>
-                      </TouchableOpacity>
+                      <View style={{ flexDirection: 'row', gap: 6, alignItems: 'center' }}>
+                        {item.status === 'blocked' ? (
+                          <TouchableOpacity 
+                            style={styles.modReactivateBtn}
+                            onPress={() => handleReactivatePhoto(item)}
+                          >
+                            <Ionicons name="checkmark-circle" size={13} color="#15803D" />
+                            <Text style={styles.modReactivateText}>Reactivar</Text>
+                          </TouchableOpacity>
+                        ) : (
+                          <TouchableOpacity 
+                            style={styles.modBlockBtn}
+                            onPress={() => handleOpenBlockPhoto(item)}
+                          >
+                            <Ionicons name="ban" size={13} color="#DC2626" />
+                            <Text style={styles.modBlockText}>Bloquear</Text>
+                          </TouchableOpacity>
+                        )}
+
+                        <TouchableOpacity 
+                          style={styles.modEditBtn}
+                          onPress={() => handleOpenEditCaption(item)}
+                        >
+                          <Ionicons name="pencil" size={13} color="#0284C7" />
+                        </TouchableOpacity>
+
+                        <TouchableOpacity 
+                          style={styles.modDeleteBtn}
+                          onPress={() => handleDeletePhoto(item.id)}
+                        >
+                          <Ionicons name="trash" size={13} color="#64748B" />
+                        </TouchableOpacity>
+                      </View>
                     )}
                   </View>
+
+                  {/* Banner de Foto Bloqueada por Incumplimiento Legal */}
+                  {item.status === 'blocked' && (
+                    <View style={styles.photoBlockedBanner}>
+                      <Ionicons name="shield-alert" size={14} color="#B91C1C" />
+                      <Text style={styles.photoBlockedBannerText} numberOfLines={2}>
+                        Foto Bloqueada: {item.moderationReason || 'Incumplimiento legal o normativo.'}
+                      </Text>
+                    </View>
+                  )}
 
                   {/* Imagen */}
                   <Image source={{ uri: item.photoUrl }} style={styles.photoImage} />
@@ -839,22 +999,33 @@ export const CommunitiesScreen: React.FC = () => {
                         const isSecondary = activeProfile.roleType === 'secondary_admin' && activeProfile.communityIdManaged === selectedCommunityDetail.id;
                         const isMember = isPrimary || isSecondary || (selectedCommunityDetail.members && selectedCommunityDetail.members.includes(currentUser.id));
 
-                        if (isMember) {
-                          return (
-                            <View style={styles.detailMemberBadge}>
-                              <Ionicons name="checkmark-circle" size={13} color="#15803D" />
-                              <Text style={styles.detailMemberBadgeText}>Eres miembro</Text>
-                            </View>
-                          );
-                        }
                         return (
-                          <TouchableOpacity 
-                            style={styles.detailJoinBtn}
-                            onPress={() => handleJoin(selectedCommunityDetail)}
-                          >
-                            <Ionicons name="add-circle" size={13} color="#FFFFFF" />
-                            <Text style={styles.detailJoinBtnText}>Unirme (+10 🐾)</Text>
-                          </TouchableOpacity>
+                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 4 }}>
+                            {isMember ? (
+                              <View style={styles.detailMemberBadge}>
+                                <Ionicons name="checkmark-circle" size={13} color="#15803D" />
+                                <Text style={styles.detailMemberBadgeText}>Eres miembro</Text>
+                              </View>
+                            ) : (
+                              <TouchableOpacity 
+                                style={styles.detailJoinBtn}
+                                onPress={() => handleJoin(selectedCommunityDetail)}
+                              >
+                                <Ionicons name="add-circle" size={13} color="#FFFFFF" />
+                                <Text style={styles.detailJoinBtnText}>Unirme (+10 🐾)</Text>
+                              </TouchableOpacity>
+                            )}
+
+                            {(isSuperAdmin || isPrimary) && (
+                              <TouchableOpacity 
+                                style={styles.changeCommPhotoDetailBtn}
+                                onPress={() => handleOpenEditCommPhoto(selectedCommunityDetail)}
+                              >
+                                <Ionicons name="camera" size={12} color="#0284C7" />
+                                <Text style={styles.changeCommPhotoDetailText}>Cambiar Foto</Text>
+                              </TouchableOpacity>
+                            )}
+                          </View>
                         );
                       })()}
                     </View>
@@ -1034,7 +1205,55 @@ export const CommunitiesScreen: React.FC = () => {
                                 <Text style={styles.photoAuthorName}>{item.uploaderName}</Text>
                                 <Text style={styles.photoDogTag}>🐾 Con {item.dogName || 'su perrito'}</Text>
                               </View>
+
+                              {/* Moderación para Administradores */}
+                              {canModerate && (
+                                <View style={{ flexDirection: 'row', gap: 6, alignItems: 'center' }}>
+                                  {item.status === 'blocked' ? (
+                                    <TouchableOpacity 
+                                      style={styles.modReactivateBtn}
+                                      onPress={() => handleReactivatePhoto(item)}
+                                    >
+                                      <Ionicons name="checkmark-circle" size={13} color="#15803D" />
+                                      <Text style={styles.modReactivateText}>Reactivar</Text>
+                                    </TouchableOpacity>
+                                  ) : (
+                                    <TouchableOpacity 
+                                      style={styles.modBlockBtn}
+                                      onPress={() => handleOpenBlockPhoto(item)}
+                                    >
+                                      <Ionicons name="ban" size={13} color="#DC2626" />
+                                      <Text style={styles.modBlockText}>Bloquear</Text>
+                                    </TouchableOpacity>
+                                  )}
+
+                                  <TouchableOpacity 
+                                    style={styles.modEditBtn}
+                                    onPress={() => handleOpenEditCaption(item)}
+                                  >
+                                    <Ionicons name="pencil" size={13} color="#0284C7" />
+                                  </TouchableOpacity>
+
+                                  <TouchableOpacity 
+                                    style={styles.modDeleteBtn}
+                                    onPress={() => handleDeletePhoto(item.id)}
+                                  >
+                                    <Ionicons name="trash" size={13} color="#64748B" />
+                                  </TouchableOpacity>
+                                </View>
+                              )}
                             </View>
+
+                            {/* Banner de Foto Bloqueada por Incumplimiento Legal */}
+                            {item.status === 'blocked' && (
+                              <View style={styles.photoBlockedBanner}>
+                                <Ionicons name="shield-alert" size={14} color="#B91C1C" />
+                                <Text style={styles.photoBlockedBannerText} numberOfLines={2}>
+                                  Foto Bloqueada: {item.moderationReason || 'Incumplimiento legal o normativo.'}
+                                </Text>
+                              </View>
+                            )}
+
                             <Image source={{ uri: item.photoUrl }} style={styles.photoImage} />
                             <View style={styles.photoCardBody}>
                               <Text style={styles.photoCaption}>{item.caption}</Text>
@@ -1420,6 +1639,162 @@ export const CommunitiesScreen: React.FC = () => {
               onPress={() => setShowAdminModal(false)}
             >
               <Text style={styles.closeAdminModalText}>Cerrar Panel de Gestión</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* MODAL: CAMBIAR FOTO DE COMUNIDAD (ADMINISTRADOR) */}
+      <Modal visible={showEditCommPhotoModal} transparent animationType="slide">
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalCard}>
+            <View style={styles.modalHeader}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                <Ionicons name="camera" size={20} color="#0284C7" />
+                <Text style={styles.modalTitle}>Cambiar Foto de Comunidad</Text>
+              </View>
+              <TouchableOpacity onPress={() => setShowEditCommPhotoModal(false)}>
+                <Ionicons name="close" size={24} color="#64748B" />
+              </TouchableOpacity>
+            </View>
+
+            <Text style={styles.modalSub}>
+              Comunidad: {selectedCommForPhoto?.name}
+            </Text>
+
+            {/* Previsualización del Logo Actual */}
+            <View style={{ alignItems: 'center', marginVertical: 12 }}>
+              <Image 
+                source={{ uri: editLogoUrl || selectedCommForPhoto?.logoUrl || 'https://images.unsplash.com/photo-1548199973-03cce0bbc87b?w=300' }} 
+                style={styles.commPhotoPreviewAvatar} 
+              />
+              <Text style={{ fontSize: 12, color: '#64748B', marginTop: 6 }}>Vista previa del Avatar Oficial</Text>
+            </View>
+
+            {/* Opciones de Cámara / Galería */}
+            <View style={styles.photoActionRow}>
+              <TouchableOpacity style={styles.photoActionButton} onPress={handleTakeLogoWithCamera}>
+                <Ionicons name="camera" size={18} color="#0284C7" />
+                <Text style={styles.photoActionText}>Tomar Foto</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.photoActionButton} onPress={handlePickLogoFromGallery}>
+                <Ionicons name="images" size={18} color="#0284C7" />
+                <Text style={styles.photoActionText}>De Galería</Text>
+              </TouchableOpacity>
+            </View>
+
+            <Text style={styles.inputSectionLabel}>O pegar URL de la imagen:</Text>
+            <TextInput
+              placeholder="https://..."
+              value={editLogoUrl}
+              onChangeText={setEditLogoUrl}
+              style={styles.modalInput}
+              autoCapitalize="none"
+            />
+
+            <Text style={styles.inputSectionLabel}>URL Portada / Banner (Opcional):</Text>
+            <TextInput
+              placeholder="https://..."
+              value={editCoverUrl}
+              onChangeText={setEditCoverUrl}
+              style={styles.modalInput}
+              autoCapitalize="none"
+            />
+
+            <TouchableOpacity 
+              style={[styles.btnPrimary, savingCommPhoto && { opacity: 0.6 }]}
+              onPress={handleSaveCommunityPhoto}
+              disabled={savingCommPhoto}
+            >
+              <Text style={styles.btnPrimaryText}>
+                {savingCommPhoto ? 'Guardando cambios...' : 'Guardar Nueva Foto de Comunidad'}
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* MODAL: BLOQUEAR FOTO POR INCUMPLIMIENTO LEGAL */}
+      <Modal visible={showBlockPhotoModal} transparent animationType="slide">
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalCard}>
+            <View style={styles.modalHeader}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                <Ionicons name="shield-alert" size={20} color="#DC2626" />
+                <Text style={[styles.modalTitle, { color: '#DC2626' }]}>Bloquear Foto (Moderación Legal)</Text>
+              </View>
+              <TouchableOpacity onPress={() => setShowBlockPhotoModal(false)}>
+                <Ionicons name="close" size={24} color="#64748B" />
+              </TouchableOpacity>
+            </View>
+
+            <Text style={styles.modalSub}>
+              Subida por: {photoToModerate?.uploaderName} • "{photoToModerate?.caption}"
+            </Text>
+
+            <Text style={styles.inputLabel}>
+              Motivo obligatorio del bloqueo legal / normativo:
+            </Text>
+            <TextInput
+              placeholder="Ej: Publicidad o venta no autorizada, contenido que viola la Ley Cholito, o imagen inapropiada"
+              value={blockReason}
+              onChangeText={setBlockReason}
+              multiline
+              numberOfLines={3}
+              style={[styles.modalInput, { height: 75 }]}
+            />
+
+            <Text style={styles.legalNoticeText}>
+              ⚖️ Al bloquear esta foto, dejará de ser visible para los miembros y tutores de la plataforma. El registro quedará guardado en la auditoría de moderación.
+            </Text>
+
+            <TouchableOpacity 
+              style={[styles.btnDanger, moderatingPhoto && { opacity: 0.6 }]}
+              onPress={handleConfirmBlockPhoto}
+              disabled={moderatingPhoto}
+            >
+              <Text style={styles.btnDangerText}>
+                {moderatingPhoto ? 'Aplicando bloqueo...' : 'Confirmar Bloqueo de Foto'}
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* MODAL: EDITAR PIE DE FOTO */}
+      <Modal visible={showEditCaptionModal} transparent animationType="slide">
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalCard}>
+            <View style={styles.modalHeader}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                <Ionicons name="pencil" size={20} color="#0284C7" />
+                <Text style={styles.modalTitle}>Editar Pie de Foto</Text>
+              </View>
+              <TouchableOpacity onPress={() => setShowEditCaptionModal(false)}>
+                <Ionicons name="close" size={24} color="#64748B" />
+              </TouchableOpacity>
+            </View>
+
+            <Text style={styles.modalSub}>
+              Corrige o modera el texto de la publicación:
+            </Text>
+
+            <TextInput
+              value={editCaptionText}
+              onChangeText={setEditCaptionText}
+              multiline
+              numberOfLines={3}
+              style={[styles.modalInput, { height: 80 }]}
+            />
+
+            <TouchableOpacity 
+              style={[styles.btnPrimary, moderatingPhoto && { opacity: 0.6 }]}
+              onPress={handleConfirmEditCaption}
+              disabled={moderatingPhoto}
+            >
+              <Text style={styles.btnPrimaryText}>
+                {moderatingPhoto ? 'Guardando...' : 'Actualizar Pie de Foto'}
+              </Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -2357,5 +2732,132 @@ const styles = StyleSheet.create({
     color: '#64748B',
     textAlign: 'center',
     marginTop: 8,
+  },
+  changeCommPhotoBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#F0F9FF',
+    borderWidth: 1,
+    borderColor: '#BAE6FD',
+    paddingVertical: 8,
+    paddingHorizontal: 10,
+    borderRadius: 10,
+  },
+  changeCommPhotoBtnText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#0284C7',
+  },
+  changeCommPhotoDetailBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#E0F2FE',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+  },
+  changeCommPhotoDetailText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#0284C7',
+  },
+  commPhotoPreviewAvatar: {
+    width: 90,
+    height: 90,
+    borderRadius: 45,
+    borderWidth: 3,
+    borderColor: '#0284C7',
+    backgroundColor: '#F1F5F9',
+  },
+  modReactivateBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    backgroundColor: '#DCFCE7',
+    borderWidth: 1,
+    borderColor: '#86EFAC',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+  },
+  modReactivateText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#15803D',
+  },
+  modBlockBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    backgroundColor: '#FEE2E2',
+    borderWidth: 1,
+    borderColor: '#FECACA',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+  },
+  modBlockText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#DC2626',
+  },
+  modEditBtn: {
+    width: 28,
+    height: 28,
+    borderRadius: 8,
+    backgroundColor: '#E0F2FE',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  photoBlockedBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: '#FEF2F2',
+    borderBottomWidth: 1,
+    borderBottomColor: '#FECACA',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  photoBlockedBannerText: {
+    flex: 1,
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#B91C1C',
+  },
+  legalNoticeText: {
+    fontSize: 11,
+    color: '#64748B',
+    lineHeight: 16,
+    marginBottom: 14,
+    backgroundColor: '#F8FAFC',
+    padding: 10,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  btnPrimary: {
+    backgroundColor: '#0284C7',
+    paddingVertical: 14,
+    borderRadius: 14,
+    alignItems: 'center',
+  },
+  btnPrimaryText: {
+    color: '#FFFFFF',
+    fontWeight: 'bold',
+    fontSize: 14,
+  },
+  btnDanger: {
+    backgroundColor: '#EF4444',
+    paddingVertical: 14,
+    borderRadius: 14,
+    alignItems: 'center',
+  },
+  btnDangerText: {
+    color: '#FFFFFF',
+    fontWeight: 'bold',
+    fontSize: 14,
   },
 });

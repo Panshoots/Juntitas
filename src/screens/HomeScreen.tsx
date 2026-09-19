@@ -22,6 +22,13 @@ import { SurprisePawModal } from '../components/SurprisePawModal';
 import { SurprisePawReward } from '../models/Gamification';
 import { useAuth } from '../context/AuthContext';
 import { getUserByIdFromDb } from '../services/userService';
+import { AppNotification } from '../models/Notification';
+import { 
+  getUserNotifications, 
+  markNotificationAsRead, 
+  markAllNotificationsAsRead 
+} from '../services/notificationService';
+import { NotificationsModal } from '../components/NotificationsModal';
 
 export const HomeScreen: React.FC = () => {
   const navigation = useNavigation<any>();
@@ -32,6 +39,24 @@ export const HomeScreen: React.FC = () => {
   const [surpriseReward, setSurpriseReward] = useState<SurprisePawReward | null>(null);
   const [cooldownRemaining, setCooldownRemaining] = useState<number>(0);
   const [showSurpriseModal, setShowSurpriseModal] = useState(false);
+
+  // Notificaciones & Avisos de Juntas
+  const [notifications, setNotifications] = useState<AppNotification[]>([]);
+  const [showNotifModal, setShowNotifModal] = useState(false);
+
+  const loadNotifications = async () => {
+    if (currentUser?.id) {
+      const list = await getUserNotifications(currentUser.id);
+      setNotifications(list);
+    }
+  };
+
+  useEffect(() => {
+    loadNotifications();
+  }, [currentUser?.id]);
+
+  const unreadNotifsCount = notifications.filter(n => !n.read).length;
+  const latestCancelledNotif = notifications.find(n => !n.read && (n.type === 'event_cancelled' || n.type === 'event_deleted'));
 
   // Racha Diaria (Daily Streak)
   const [streakReward, setStreakReward] = useState<DailyStreakResult | null>(null);
@@ -103,22 +128,65 @@ export const HomeScreen: React.FC = () => {
         <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} colors={['#0284C7']} tintColor="#0284C7" />
       }
     >
-      {/* Header Principal con balance de Huellitas */}
+      {/* Header Principal con balance de Huellitas y Notificaciones */}
       <View style={styles.topHeader}>
         <View>
           <Text style={styles.appName}>🐶 Juntitas</Text>
           <Text style={styles.tagline}>Vida social & experiencias para perritos</Text>
         </View>
 
-        <TouchableOpacity 
-          style={styles.pawsBadge}
-          onPress={() => navigation.navigate('Rewards')}
-          activeOpacity={0.8}
-        >
-          <Ionicons name="paw" size={18} color="#F59E0B" />
-          <Text style={styles.pawsCount}>{pawBalance} 🐾</Text>
-        </TouchableOpacity>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+          {/* Botón Campana Notificaciones */}
+          <TouchableOpacity 
+            style={styles.notifBadgeBtn}
+            onPress={() => setShowNotifModal(true)}
+            activeOpacity={0.8}
+          >
+            <Ionicons name="notifications" size={19} color="#0F172A" />
+            {unreadNotifsCount > 0 && (
+              <View style={styles.notifDotBadge}>
+                <Text style={styles.notifDotText}>{unreadNotifsCount > 9 ? '9+' : unreadNotifsCount}</Text>
+              </View>
+            )}
+          </TouchableOpacity>
+
+          <TouchableOpacity 
+            style={styles.pawsBadge}
+            onPress={() => navigation.navigate('Rewards')}
+            activeOpacity={0.8}
+          >
+            <Ionicons name="paw" size={18} color="#F59E0B" />
+            <Text style={styles.pawsCount}>{pawBalance} 🐾</Text>
+          </TouchableOpacity>
+        </View>
       </View>
+
+      {/* Banner Urgente de Aviso de Cancelación de Junta */}
+      {latestCancelledNotif && (
+        <View style={styles.cancellationBanner}>
+          <View style={styles.cancellationBannerHeader}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flex: 1 }}>
+              <Ionicons name="alert-circle" size={18} color="#DC2626" />
+              <Text style={styles.cancellationBannerTitle}>Aviso: Junta Cancelada</Text>
+            </View>
+            <TouchableOpacity 
+              onPress={async () => {
+                await markNotificationAsRead(latestCancelledNotif.id);
+                loadNotifications();
+              }}
+              style={styles.cancellationDismissBtn}
+            >
+              <Ionicons name="close" size={18} color="#991B1B" />
+            </TouchableOpacity>
+          </View>
+          <Text style={styles.cancellationBannerEvent}>"{latestCancelledNotif.eventTitle || 'Junta Canina'}"</Text>
+          <View style={styles.cancellationReasonBox}>
+            <Text style={styles.cancellationReasonText}>
+              Motivo: {latestCancelledNotif.cancellationReason || 'Cancelación informada por la organización.'}
+            </Text>
+          </View>
+        </View>
+      )}
 
       {/* Banner de Super Admin para Acceso Inmediato al CRM */}
       {isSuperAdmin && (
@@ -326,6 +394,25 @@ export const HomeScreen: React.FC = () => {
           </View>
         </View>
       </Modal>
+
+      {/* Modal de Notificaciones Oficiales */}
+      <NotificationsModal 
+        visible={showNotifModal}
+        onClose={() => setShowNotifModal(false)}
+        notifications={notifications}
+        onMarkAsRead={async (id) => {
+          await markNotificationAsRead(id);
+          loadNotifications();
+        }}
+        onMarkAllAsRead={async () => {
+          await markAllNotificationsAsRead(currentUser.id);
+          loadNotifications();
+        }}
+        onSelectEvent={(eventId) => {
+          setShowNotifModal(false);
+          navigation.navigate('Events');
+        }}
+      />
     </ScrollView>
   );
 };
@@ -341,6 +428,89 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     marginBottom: 20,
+  },
+  notifBadgeBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    alignItems: 'center',
+    justifyContent: 'center',
+    position: 'relative',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 1,
+  },
+  notifDotBadge: {
+    position: 'absolute',
+    top: -2,
+    right: -2,
+    backgroundColor: '#EF4444',
+    borderRadius: 9,
+    minWidth: 18,
+    height: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 4,
+    borderWidth: 1.5,
+    borderColor: '#FFFFFF',
+  },
+  notifDotText: {
+    color: '#FFFFFF',
+    fontSize: 10,
+    fontWeight: '900',
+  },
+  cancellationBanner: {
+    backgroundColor: '#FEF2F2',
+    borderRadius: 16,
+    borderWidth: 1.5,
+    borderColor: '#FCA5A5',
+    padding: 14,
+    marginBottom: 16,
+    shadowColor: '#DC2626',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 6,
+    elevation: 2,
+  },
+  cancellationBannerHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 6,
+  },
+  cancellationBannerTitle: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#DC2626',
+    letterSpacing: 0.5,
+  },
+  cancellationDismissBtn: {
+    padding: 2,
+  },
+  cancellationBannerEvent: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: '#0F172A',
+    marginBottom: 6,
+  },
+  cancellationReasonBox: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    borderLeftWidth: 3,
+    borderLeftColor: '#DC2626',
+  },
+  cancellationReasonText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#991B1B',
+    lineHeight: 16,
   },
   appName: {
     fontSize: 26,

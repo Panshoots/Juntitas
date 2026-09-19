@@ -17,6 +17,11 @@ import {
 import { db } from '../firebase/config';
 import { DogEvent, DogAttendeeSummary, EventStatus } from '../models/Event';
 import { logAuditAction } from './auditService';
+import { 
+  notifyAttendeesOfCancellation, 
+  notifyAttendeesOfDeletion, 
+  notifyCommunityMembersOfNewEvent 
+} from './notificationService';
 
 export interface UserAttendanceRecord {
   id?: string;
@@ -145,6 +150,21 @@ export const createEvent = async (
     `Nueva junta oficial publicada: "${newEvent.title}" para ${newEvent.communityName}`
   );
 
+  // Notificar a todos los miembros de la comunidad sobre la nueva junta oficial
+  const dateFormatted = newEvent.startDate 
+    ? (newEvent.startDate.toLocaleDateString 
+        ? newEvent.startDate.toLocaleDateString('es-CL', { weekday: 'short', day: 'numeric', month: 'short' }) 
+        : 'próximamente')
+    : 'próximamente';
+  notifyCommunityMembersOfNewEvent(
+    newEvent.communityId,
+    newEvent.communityName,
+    newEvent.id,
+    newEvent.title,
+    dateFormatted,
+    eventData.creatorUserId
+  ).catch(e => console.warn('Error notificando nueva junta:', e));
+
   return { success: true, id: newEvent.id, message: '¡Junta oficial publicada exitosamente!' };
 };
 
@@ -194,6 +214,16 @@ export const cancelEventByAdmin = async (
   const ev = localEvents.find(e => e.id === eventId);
   if (ev) ev.status = 'cancelada';
 
+  // Notificar a todos los tutores confirmados con el motivo obligatorio
+  if (ev && ev.attendeeUserIds && ev.attendeeUserIds.length > 0) {
+    notifyAttendeesOfCancellation(
+      eventId,
+      ev.title,
+      reason,
+      ev.attendeeUserIds
+    ).catch(e => console.warn('Error notificando cancelación a tutores:', e));
+  }
+
   await logAuditAction(
     adminUserId,
     'EVENT_CANCEL_BY_ADMIN',
@@ -202,7 +232,7 @@ export const cancelEventByAdmin = async (
     `Junta cancelada por el Super Admin. Motivo: ${reason}`
   );
 
-  return { success: true, message: 'Junta cancelada correctamente.' };
+  return { success: true, message: 'Junta cancelada correctamente y tutores notificados.' };
 };
 
 export const deleteEventInDb = async (
@@ -210,6 +240,16 @@ export const deleteEventInDb = async (
   reason: string,
   adminUserId: string
 ): Promise<{ success: boolean; message: string }> => {
+  const ev = localEvents.find(e => e.id === eventId);
+  if (ev && ev.attendeeUserIds && ev.attendeeUserIds.length > 0) {
+    notifyAttendeesOfDeletion(
+      eventId,
+      ev.title,
+      reason,
+      ev.attendeeUserIds
+    ).catch(e => console.warn('Error notificando eliminación a tutores:', e));
+  }
+
   try {
     await deleteDoc(doc(db, 'events', eventId));
   } catch (err) {
