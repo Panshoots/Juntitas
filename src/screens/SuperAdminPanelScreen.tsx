@@ -16,6 +16,7 @@ import { useAuth } from '../context/AuthContext';
 import { AppUser, UserRole, UserStatus } from '../models/User';
 import { CommunityRequest, Community } from '../models/Community';
 import { AuditLog } from '../models/AuditAndReport';
+import { DogEvent, EventStatus } from '../models/Event';
 import { 
   getUsersFromDb, 
   updateUserStatusInDb, 
@@ -28,15 +29,21 @@ import {
   rejectCommunityRequest,
   getCommunities 
 } from '../services/communityService';
-import { getAuditLogs } from '../services/auditService';
+import { getAuditLogs, logAuditAction } from '../services/auditService';
+import { 
+  getEvents, 
+  updateEventStatusInDb, 
+  cancelEventByAdmin, 
+  deleteEventInDb 
+} from '../services/eventService';
 import { resetEntireApp, seedRealisticData } from '../services/seedService';
 import { useToast } from '../context/ToastContext';
 
-type CrmTab = 'users' | 'communities' | 'businesses' | 'audit';
+type CrmTab = 'users' | 'communities' | 'events' | 'audit';
 
 export const SuperAdminPanelScreen: React.FC = () => {
   const insets = useSafeAreaInsets();
-  const { currentUser } = useAuth();
+  const { currentUser, sendPasswordReset } = useAuth();
   const { showToast } = useToast();
 
   const [activeTab, setActiveTab] = useState<CrmTab>('users');
@@ -60,10 +67,25 @@ export const SuperAdminPanelScreen: React.FC = () => {
   const [editComuna, setEditComuna] = useState('');
   const [editBio, setEditBio] = useState('');
 
+  // Modal para restablecer contraseña desde CRM
+  const [showResetPwdModal, setShowResetPwdModal] = useState(false);
+  const [userToResetPwd, setUserToResetPwd] = useState<AppUser | null>(null);
+  const [sendingResetEmail, setSendingResetEmail] = useState(false);
+
   // Datos CRM Comunidades y Tiendas
   const [communityRequests, setCommunityRequests] = useState<CommunityRequest[]>([]);
   const [communities, setCommunities] = useState<Community[]>([]);
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
+
+  // Datos CRM Juntas
+  const [events, setEvents] = useState<DogEvent[]>([]);
+  const [eventSearch, setEventSearch] = useState('');
+  const [eventStatusFilter, setEventStatusFilter] = useState<'ALL' | EventStatus>('ALL');
+  const [selectedEvent, setSelectedEvent] = useState<DogEvent | null>(null);
+  const [showCancelEventModal, setShowCancelEventModal] = useState(false);
+  const [cancelEventReason, setCancelEventReason] = useState('');
+  const [showEventStatusModal, setShowEventStatusModal] = useState(false);
+  const [selectedNewEventStatus, setSelectedNewEventStatus] = useState<EventStatus>('programada');
 
   useEffect(() => {
     loadAllCrmData();
@@ -71,16 +93,18 @@ export const SuperAdminPanelScreen: React.FC = () => {
 
   const loadAllCrmData = async () => {
     setLoading(true);
-    const [uData, reqData, commData, auditData] = await Promise.all([
+    const [uData, reqData, commData, auditData, evData] = await Promise.all([
       getUsersFromDb(),
       getCommunityRequests(),
       getCommunities(),
-      getAuditLogs()
+      getAuditLogs(),
+      getEvents()
     ]);
     setUsers(uData);
     setCommunityRequests(reqData);
     setCommunities(commData);
     setAuditLogs(auditData);
+    setEvents(evData);
     setLoading(false);
   };
 
@@ -170,6 +194,62 @@ export const SuperAdminPanelScreen: React.FC = () => {
     loadAllCrmData();
   };
 
+  // Restablecimiento de contraseña por Super Admin
+  const handleConfirmSendResetEmail = async () => {
+    if (!userToResetPwd?.email) return;
+    setSendingResetEmail(true);
+    const res = await sendPasswordReset(userToResetPwd.email);
+    setSendingResetEmail(false);
+    if (res.success) {
+      await logAuditAction(
+        currentUser.id,
+        'PASSWORD_RESET_DISPATCH',
+        'users',
+        userToResetPwd.id,
+        `SuperAdmin despachó correo de recuperación de contraseña a: ${userToResetPwd.email}`
+      );
+      showToast(`¡Enlace de recuperación enviado exitosamente a ${userToResetPwd.email}!`, 'success');
+      setShowResetPwdModal(false);
+      setUserToResetPwd(null);
+      loadAllCrmData();
+    } else {
+      showToast(res.message, 'error');
+    }
+  };
+
+  // Acciones de Gestión de Juntas
+  const handleConfirmChangeEventStatus = async () => {
+    if (!selectedEvent) return;
+    const res = await updateEventStatusInDb(selectedEvent.id, selectedNewEventStatus, currentUser.id);
+    showToast(res.message, res.success ? 'success' : 'error');
+    setShowEventStatusModal(false);
+    setSelectedEvent(null);
+    loadAllCrmData();
+  };
+
+  const handleConfirmCancelEvent = async () => {
+    if (!selectedEvent) return;
+    if (!cancelEventReason.trim()) {
+      showToast('Debes ingresar un motivo de moderación/cancelación.', 'warning');
+      return;
+    }
+    const res = await cancelEventByAdmin(selectedEvent.id, cancelEventReason, currentUser.id);
+    showToast(res.message, res.success ? 'success' : 'error');
+    setShowCancelEventModal(false);
+    setCancelEventReason('');
+    setSelectedEvent(null);
+    loadAllCrmData();
+  };
+
+  const handleDeleteEvent = async (ev: DogEvent) => {
+    const confirmDelete = window ? window.confirm(`⚠️ ¿Deseas ELIMINAR definitivamente la junta "${ev.title}"? Esta acción removerá el evento por completo.`) : true;
+    if (!confirmDelete) return;
+
+    const res = await deleteEventInDb(ev.id, 'Eliminación administrativa desde panel CRM', currentUser.id);
+    showToast(res.message, res.success ? 'success' : 'error');
+    loadAllCrmData();
+  };
+
   // Filtrado de usuarios
   const filteredUsers = users.filter(u => {
     const matchesSearch = u.displayName.toLowerCase().includes(userSearch.toLowerCase()) || 
@@ -184,6 +264,22 @@ export const SuperAdminPanelScreen: React.FC = () => {
     }
     if (userStatusFilter === 'SUSPENDED') {
       return u.status === 'SUSPENDIDO' || u.status === 'suspended' || u.status === 'banned';
+    }
+    return true;
+  });
+
+  // Filtrado de juntas
+  const filteredEvents = events.filter(e => {
+    const term = eventSearch.toLowerCase();
+    const matchesSearch = 
+      (e.title || '').toLowerCase().includes(term) ||
+      (e.communityName || '').toLowerCase().includes(term) ||
+      (e.location?.placeName || '').toLowerCase().includes(term) ||
+      (e.location?.comuna || '').toLowerCase().includes(term);
+    if (!matchesSearch) return false;
+
+    if (eventStatusFilter !== 'ALL') {
+      return e.status === eventStatusFilter;
     }
     return true;
   });
@@ -244,7 +340,17 @@ export const SuperAdminPanelScreen: React.FC = () => {
         >
           <Ionicons name="paw" size={16} color={activeTab === 'communities' ? '#FFFFFF' : '#64748B'} />
           <Text style={[styles.tabBtnText, activeTab === 'communities' && styles.tabBtnTextActive]}>
-            Comunidades ({communityRequests.filter(r => r.status === 'pending').length})
+            Comunidades ({communities.length})
+          </Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity 
+          style={[styles.tabBtn, activeTab === 'events' && styles.tabBtnActive]}
+          onPress={() => setActiveTab('events')}
+        >
+          <Ionicons name="calendar" size={16} color={activeTab === 'events' ? '#FFFFFF' : '#64748B'} />
+          <Text style={[styles.tabBtnText, activeTab === 'events' && styles.tabBtnTextActive]}>
+            Juntas ({events.length})
           </Text>
         </TouchableOpacity>
 
@@ -382,6 +488,18 @@ export const SuperAdminPanelScreen: React.FC = () => {
                       <Text style={[styles.actionBtnText, { color: '#0284C7' }]}>Rol</Text>
                     </TouchableOpacity>
 
+                    {/* Restablecer Contraseña por Correo */}
+                    <TouchableOpacity 
+                      style={styles.actionBtnResetPwd} 
+                      onPress={() => {
+                        setUserToResetPwd(item);
+                        setShowResetPwdModal(true);
+                      }}
+                    >
+                      <Ionicons name="mail" size={14} color="#0D9488" />
+                      <Text style={[styles.actionBtnText, { color: '#0D9488' }]}>Clave</Text>
+                    </TouchableOpacity>
+
                     {/* Editar Datos */}
                     <TouchableOpacity 
                       style={styles.actionBtnEdit} 
@@ -456,6 +574,190 @@ export const SuperAdminPanelScreen: React.FC = () => {
             </View>
           ))}
         </ScrollView>
+      )}
+
+      {/* CONTENIDO PESTAÑA: GESTIÓN DE JUNTAS */}
+      {activeTab === 'events' && (
+        <View style={{ flex: 1 }}>
+          {/* Barra de búsqueda de Juntas */}
+          <View style={styles.searchBox}>
+            <Ionicons name="search" size={18} color="#94A3B8" />
+            <TextInput
+              placeholder="Buscar por título, comunidad o comuna..."
+              value={eventSearch}
+              onChangeText={setEventSearch}
+              style={styles.searchInput}
+            />
+          </View>
+
+          {/* Filtros de Estado de Junta */}
+          <View style={{ marginBottom: 10 }}>
+            <ScrollView 
+              horizontal 
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.filterPillsRow}
+            >
+              {[
+                { key: 'ALL', label: 'Todas' },
+                { key: 'programada', label: 'Programadas 📅' },
+                { key: 'confirmada', label: 'Confirmadas ✅' },
+                { key: 'en_curso', label: 'En Curso 🐕' },
+                { key: 'finalizada', label: 'Finalizadas 🏁' },
+                { key: 'cancelada', label: 'Canceladas ⛔' },
+              ].map(f => (
+                <TouchableOpacity 
+                  key={f.key}
+                  style={[styles.pill, eventStatusFilter === f.key && styles.pillActive]}
+                  onPress={() => setEventStatusFilter(f.key as any)}
+                >
+                  <Text style={[styles.pillText, eventStatusFilter === f.key && styles.pillTextActive]}>
+                    {f.label}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          </View>
+
+          {/* Listado de Juntas */}
+          <FlatList
+            data={filteredEvents}
+            keyExtractor={item => item.id}
+            contentContainerStyle={styles.listContent}
+            refreshControl={
+              <RefreshControl refreshing={loading} onRefresh={loadAllCrmData} colors={['#0284C7']} tintColor="#0284C7" />
+            }
+            ListEmptyComponent={
+              <View style={styles.emptyCard}>
+                <Text style={styles.emptyText}>No hay juntas que coincidan con el filtro.</Text>
+              </View>
+            }
+            renderItem={({ item }) => {
+              const isScheduled = item.status === 'programada';
+              const isConfirmed = item.status === 'confirmada';
+              const isInProgress = item.status === 'en_curso';
+              const isFinished = item.status === 'finalizada';
+              const isCancelled = item.status === 'cancelada';
+
+              const dateStr = item.startDate 
+                ? (item.startDate.toLocaleDateString 
+                    ? item.startDate.toLocaleDateString('es-CL', { weekday: 'short', day: 'numeric', month: 'short' }) 
+                    : String(item.startDate))
+                : 'Fecha pendiente';
+
+              return (
+                <View style={[styles.eventCard, isCancelled && styles.eventCardCancelled]}>
+                  {/* Encabezado del Evento */}
+                  <View style={styles.eventCardHeader}>
+                    <View style={{ flex: 1, marginRight: 8 }}>
+                      <View style={styles.eventCommTag}>
+                        <Ionicons name="paw" size={12} color="#0284C7" />
+                        <Text style={styles.eventCommTagText}>{item.communityName}</Text>
+                      </View>
+                      <Text style={styles.eventTitle}>{item.title}</Text>
+                    </View>
+
+                    <View style={[
+                      styles.statusPill,
+                      isScheduled ? styles.statusPillPending :
+                      isConfirmed ? styles.statusPillActive :
+                      isInProgress ? styles.statusPillInProgress :
+                      isCancelled ? styles.statusPillSuspended :
+                      styles.statusPillFinished
+                    ]}>
+                      <Text style={[
+                        styles.statusPillText,
+                        isScheduled ? { color: '#B45309' } :
+                        isConfirmed ? { color: '#15803D' } :
+                        isInProgress ? { color: '#1D4ED8' } :
+                        isCancelled ? { color: '#B91C1C' } :
+                        { color: '#475569' }
+                      ]}>
+                        {isScheduled ? 'PROGRAMADA' :
+                         isConfirmed ? 'CONFIRMADA' :
+                         isInProgress ? 'EN CURSO' :
+                         isCancelled ? 'CANCELADA' : 'FINALIZADA'}
+                      </Text>
+                    </View>
+                  </View>
+
+                  {/* Detalles de Fecha y Lugar */}
+                  <View style={styles.eventDetailsRow}>
+                    <View style={styles.eventDetailItem}>
+                      <Ionicons name="calendar-outline" size={14} color="#64748B" />
+                      <Text style={styles.eventDetailText}>{dateStr}</Text>
+                    </View>
+
+                    <View style={styles.eventDetailItem}>
+                      <Ionicons name="location-outline" size={14} color="#64748B" />
+                      <Text style={styles.eventDetailText} numberOfLines={1}>
+                        {item.location?.placeName || 'Lugar'} • {item.location?.comuna || 'Sin comuna'}
+                      </Text>
+                    </View>
+                  </View>
+
+                  {/* Asistentes: Tutores y Perritos */}
+                  <View style={styles.eventAttendanceRow}>
+                    <View style={styles.eventAttendeeBadge}>
+                      <Ionicons name="people" size={13} color="#0284C7" />
+                      <Text style={styles.eventAttendeeBadgeText}>{item.tutorsCount || 0} tutores</Text>
+                    </View>
+
+                    <View style={styles.eventAttendeeBadge}>
+                      <Ionicons name="paw" size={13} color="#10B981" />
+                      <Text style={[styles.eventAttendeeBadgeText, { color: '#10B981' }]}>{item.dogsCount || 0} perritos</Text>
+                    </View>
+
+                    {item.acceptsBusinesses && (
+                      <View style={[styles.eventAttendeeBadge, { backgroundColor: '#FEF3C7' }]}>
+                        <Ionicons name="storefront" size={13} color="#D97706" />
+                        <Text style={[styles.eventAttendeeBadgeText, { color: '#D97706' }]}>Comercios</Text>
+                      </View>
+                    )}
+                  </View>
+
+                  {/* Acciones de Moderación del Super Admin */}
+                  <View style={styles.actionsBar}>
+                    {/* Cambiar Estado */}
+                    <TouchableOpacity 
+                      style={styles.actionBtnStatus} 
+                      onPress={() => {
+                        setSelectedEvent(item);
+                        setSelectedNewEventStatus(item.status);
+                        setShowEventStatusModal(true);
+                      }}
+                    >
+                      <Ionicons name="swap-horizontal" size={14} color="#0284C7" />
+                      <Text style={[styles.actionBtnText, { color: '#0284C7' }]}>Estado</Text>
+                    </TouchableOpacity>
+
+                    {/* Cancelar / Moderar */}
+                    {!isCancelled && (
+                      <TouchableOpacity 
+                        style={styles.actionBtnCancelEvent} 
+                        onPress={() => {
+                          setSelectedEvent(item);
+                          setShowCancelEventModal(true);
+                        }}
+                      >
+                        <Ionicons name="ban" size={14} color="#DC2626" />
+                        <Text style={[styles.actionBtnText, { color: '#DC2626' }]}>Cancelar</Text>
+                      </TouchableOpacity>
+                    )}
+
+                    {/* Eliminar Definitivamente */}
+                    <TouchableOpacity 
+                      style={styles.actionBtnDelete} 
+                      onPress={() => handleDeleteEvent(item)}
+                    >
+                      <Ionicons name="trash-outline" size={14} color="#64748B" />
+                      <Text style={[styles.actionBtnText, { color: '#64748B' }]}>Eliminar</Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              );
+            }}
+          />
+        </View>
       )}
 
       {/* CONTENIDO PESTAÑA: AUDITORÍA */}
@@ -595,6 +897,120 @@ export const SuperAdminPanelScreen: React.FC = () => {
 
             <TouchableOpacity style={styles.btnPrimary} onPress={handleConfirmEditUser}>
               <Text style={styles.btnPrimaryText}>Actualizar Datos en Firestore</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* MODAL: ENVIAR CORREO RESTABLECIMIENTO DE CONTRASEÑA */}
+      <Modal visible={showResetPwdModal} transparent animationType="slide">
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalCard}>
+            <View style={styles.modalHeader}>
+              <Text style={[styles.modalTitle, { color: '#0F766E' }]}>📧 Restablecer Contraseña</Text>
+              <TouchableOpacity onPress={() => setShowResetPwdModal(false)}>
+                <Ionicons name="close" size={24} color="#64748B" />
+              </TouchableOpacity>
+            </View>
+
+            <Text style={styles.modalSub}>
+              Se enviará un correo de recuperación oficial de Firebase para que el usuario pueda restablecer su contraseña de forma segura.
+            </Text>
+
+            <View style={styles.pwdResetUserInfo}>
+              <Text style={styles.pwdResetLabel}>Usuario:</Text>
+              <Text style={styles.pwdResetVal}>{userToResetPwd?.displayName}</Text>
+
+              <Text style={[styles.pwdResetLabel, { marginTop: 6 }]}>Correo Destinatario:</Text>
+              <Text style={styles.pwdResetValEmail}>{userToResetPwd?.email}</Text>
+            </View>
+
+            <TouchableOpacity 
+              style={[styles.btnTeal, sendingResetEmail && { opacity: 0.6 }]} 
+              onPress={handleConfirmSendResetEmail}
+              disabled={sendingResetEmail}
+            >
+              <Ionicons name="mail" size={16} color="#FFFFFF" />
+              <Text style={styles.btnTealText}>
+                {sendingResetEmail ? 'Enviando enlace oficial...' : 'Enviar Correo de Restablecimiento'}
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* MODAL: CAMBIAR ESTADO DE JUNTA */}
+      <Modal visible={showEventStatusModal} transparent animationType="slide">
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalCard}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>🔄 Cambiar Estado de la Junta</Text>
+              <TouchableOpacity onPress={() => setShowEventStatusModal(false)}>
+                <Ionicons name="close" size={24} color="#64748B" />
+              </TouchableOpacity>
+            </View>
+
+            <Text style={styles.modalSub}>
+              Junta: "{selectedEvent?.title}" ({selectedEvent?.communityName})
+            </Text>
+
+            {([
+              { key: 'programada', label: '📅 Programada (En preparación)', color: '#B45309' },
+              { key: 'confirmada', label: '✅ Confirmada (Punto de encuentro listo)', color: '#15803D' },
+              { key: 'en_curso', label: '🐕 En Curso (Junta ocurriendo ahora)', color: '#1D4ED8' },
+              { key: 'finalizada', label: '🏁 Finalizada (Junta terminada)', color: '#475569' },
+              { key: 'cancelada', label: '⛔ Cancelada (Suspendida por la organización)', color: '#B91C1C' },
+            ] as const).map(st => (
+              <TouchableOpacity 
+                key={st.key}
+                style={[styles.roleSelectOption, selectedNewEventStatus === st.key && styles.roleSelectOptionActive]}
+                onPress={() => setSelectedNewEventStatus(st.key as EventStatus)}
+              >
+                <Ionicons 
+                  name={selectedNewEventStatus === st.key ? "radio-button-on" : "radio-button-off"} 
+                  size={18} 
+                  color={selectedNewEventStatus === st.key ? "#0284C7" : "#94A3B8"} 
+                />
+                <Text style={[styles.roleSelectText, { color: st.color }]}>
+                  {st.label}
+                </Text>
+              </TouchableOpacity>
+            ))}
+
+            <TouchableOpacity style={styles.btnPrimary} onPress={handleConfirmChangeEventStatus}>
+              <Text style={styles.btnPrimaryText}>Actualizar Estado de la Junta</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* MODAL: CANCELAR / MODERAR JUNTA */}
+      <Modal visible={showCancelEventModal} transparent animationType="slide">
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalCard}>
+            <View style={styles.modalHeader}>
+              <Text style={[styles.modalTitle, { color: '#B91C1C' }]}>⛔ Cancelar / Moderar Junta</Text>
+              <TouchableOpacity onPress={() => setShowCancelEventModal(false)}>
+                <Ionicons name="close" size={24} color="#64748B" />
+              </TouchableOpacity>
+            </View>
+
+            <Text style={styles.modalSub}>
+              Junta: "{selectedEvent?.title}" • {selectedEvent?.communityName}
+            </Text>
+
+            <Text style={styles.inputLabel}>Motivo obligatorio de moderación / cancelación:</Text>
+            <TextInput
+              placeholder="Ej: Condiciones climáticas adversas o falta de permisos municipales"
+              value={cancelEventReason}
+              onChangeText={setCancelEventReason}
+              multiline
+              numberOfLines={3}
+              style={[styles.modalInput, { height: 70 }]}
+            />
+
+            <TouchableOpacity style={styles.btnDanger} onPress={handleConfirmCancelEvent}>
+              <Text style={styles.btnDangerText}>Confirmar Cancelación de Junta</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -765,6 +1181,12 @@ const styles = StyleSheet.create({
   statusPillSuspended: {
     backgroundColor: '#FEE2E2',
   },
+  statusPillInProgress: {
+    backgroundColor: '#DBEAFE',
+  },
+  statusPillFinished: {
+    backgroundColor: '#F1F5F9',
+  },
   statusPillText: {
     fontSize: 10,
     fontWeight: '800',
@@ -846,6 +1268,151 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '700',
     color: '#FFFFFF',
+  },
+  actionBtnResetPwd: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#CCFBF1',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
+    gap: 4,
+  },
+  eventCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    marginBottom: 12,
+  },
+  eventCardCancelled: {
+    backgroundColor: '#FFF5F5',
+    borderColor: '#FECACA',
+  },
+  eventCardHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: 8,
+  },
+  eventCommTag: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginBottom: 4,
+  },
+  eventCommTagText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#0284C7',
+  },
+  eventTitle: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: '#0F172A',
+  },
+  eventDetailsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: 12,
+    marginTop: 4,
+    marginBottom: 8,
+  },
+  eventDetailItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  eventDetailText: {
+    fontSize: 12,
+    color: '#64748B',
+    fontWeight: '500',
+  },
+  eventAttendanceRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginVertical: 4,
+  },
+  eventAttendeeBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F0F9FF',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+    gap: 4,
+  },
+  eventAttendeeBadgeText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#0284C7',
+  },
+  actionBtnStatus: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#E0F2FE',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
+    gap: 4,
+  },
+  actionBtnCancelEvent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FEE2E2',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
+    gap: 4,
+  },
+  actionBtnDelete: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F1F5F9',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
+    gap: 4,
+  },
+  pwdResetUserInfo: {
+    backgroundColor: '#F8FAFC',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    padding: 12,
+    marginBottom: 16,
+  },
+  pwdResetLabel: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#64748B',
+  },
+  pwdResetVal: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: '#0F172A',
+  },
+  pwdResetValEmail: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#0F766E',
+  },
+  btnTeal: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#0F766E',
+    paddingVertical: 14,
+    borderRadius: 14,
+    gap: 8,
+  },
+  btnTealText: {
+    color: '#FFFFFF',
+    fontWeight: 'bold',
+    fontSize: 14,
   },
   tabContentScroll: {
     paddingHorizontal: 20,

@@ -6,6 +6,7 @@ import {
   setDoc, 
   addDoc, 
   updateDoc, 
+  deleteDoc,
   serverTimestamp,
   query,
   where,
@@ -173,6 +174,59 @@ export const updateEventStatusInDb = async (
   );
 
   return { success: true, message: `Estado de junta actualizado a ${newStatus}.` };
+};
+
+export const cancelEventByAdmin = async (
+  eventId: string,
+  reason: string,
+  adminUserId: string
+): Promise<{ success: boolean; message: string }> => {
+  try {
+    await updateDoc(doc(db, 'events', eventId), {
+      status: 'cancelada',
+      cancellationReason: reason,
+      updatedAt: serverTimestamp()
+    });
+  } catch (err) {
+    console.warn('Cancelando evento localmente:', err);
+  }
+
+  const ev = localEvents.find(e => e.id === eventId);
+  if (ev) ev.status = 'cancelada';
+
+  await logAuditAction(
+    adminUserId,
+    'EVENT_CANCEL_BY_ADMIN',
+    'events',
+    eventId,
+    `Junta cancelada por el Super Admin. Motivo: ${reason}`
+  );
+
+  return { success: true, message: 'Junta cancelada correctamente.' };
+};
+
+export const deleteEventInDb = async (
+  eventId: string,
+  reason: string,
+  adminUserId: string
+): Promise<{ success: boolean; message: string }> => {
+  try {
+    await deleteDoc(doc(db, 'events', eventId));
+  } catch (err) {
+    console.warn('Eliminando evento localmente:', err);
+  }
+
+  localEvents = localEvents.filter(e => e.id !== eventId);
+
+  await logAuditAction(
+    adminUserId,
+    'EVENT_DELETE_BY_ADMIN',
+    'events',
+    eventId,
+    `Junta eliminada definitivamente por el Super Admin. Motivo: ${reason || 'Eliminación administrativa'}`
+  );
+
+  return { success: true, message: 'Junta eliminada definitivamente de la plataforma.' };
 };
 
 export const registerForEvent = async (
