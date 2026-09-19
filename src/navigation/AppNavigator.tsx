@@ -9,12 +9,17 @@ import { BusinessPortalScreen } from '../screens/BusinessPortalScreen';
 import { OnboardingScreen } from '../screens/OnboardingScreen';
 import { AuthScreen } from '../screens/AuthScreen';
 import { AccountPendingScreen } from '../screens/AccountPendingScreen';
+import { SplashScreen } from '../screens/SplashScreen';
 import { useAuth } from '../context/AuthContext';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
 export const AppNavigator: React.FC = () => {
   const { sessionState, authMode, startAuthFlow, backToOnboarding } = useAuth();
+
+  if (sessionState === 'loading') {
+    return <SplashScreen />;
+  }
 
   if (sessionState === 'onboarding') {
     return (

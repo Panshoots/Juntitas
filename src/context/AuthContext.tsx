@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { 
   createUserWithEmailAndPassword, 
   signInWithEmailAndPassword, 
@@ -17,7 +18,7 @@ import { SecondaryAdminPermissions } from '../models/Community';
 import { createUserInDb, getUsersFromDb } from '../services/userService';
 import { getDogsByOwner, createDogForOwner } from '../services/dogService';
 
-export type SessionState = 'onboarding' | 'auth' | 'pending_approval' | 'authenticated';
+export type SessionState = 'loading' | 'onboarding' | 'auth' | 'pending_approval' | 'authenticated';
 
 export interface ActiveProfileInfo {
   roleType: UserRole;
@@ -28,6 +29,22 @@ export interface ActiveProfileInfo {
   communityNameManaged?: string;
   secondaryPermissions?: SecondaryAdminPermissions;
 }
+
+export const ANONYMOUS_USER: AppUser = {
+  id: '',
+  displayName: 'Invitado',
+  email: '',
+  photoURL: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=400',
+  bio: 'Explorador de la comunidad canina Juntitas.',
+  roleType: 'member',
+  location: { region: 'Metropolitana', comuna: 'Santiago' },
+  contact: { phone: '', isPublic: false },
+  privacy: { showDogsPublicly: false, showCommunitiesPublicly: false, showAttendancePublicly: false },
+  pawBalance: 0,
+  isSuperAdmin: false,
+  status: 'ACTIVO',
+  createdAt: new Date(2024, 0, 1)
+};
 
 export const SUPER_ADMIN_USER: AppUser = {
   id: 'zjnYSghe7oMOd3FPCnMFfpE2Yrb2',
@@ -102,9 +119,9 @@ const defaultProfile: ActiveProfileInfo = {
 };
 
 const AuthContext = createContext<AuthContextType>({
-  sessionState: 'onboarding',
+  sessionState: 'loading',
   authMode: 'register',
-  currentUser: SUPER_ADMIN_USER,
+  currentUser: ANONYMOUS_USER,
   currentDogs: [],
   activeProfile: defaultProfile,
   startAuthFlow: () => {},
@@ -125,32 +142,110 @@ const AuthContext = createContext<AuthContextType>({
 });
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [sessionState, setSessionState] = useState<SessionState>('onboarding');
+  const [sessionState, setSessionState] = useState<SessionState>('loading');
   const [authMode, setAuthMode] = useState<'login' | 'register'>('register');
-  const [currentUser, setCurrentUser] = useState<AppUser>(SUPER_ADMIN_USER);
+  const [currentUser, setCurrentUser] = useState<AppUser>(ANONYMOUS_USER);
   const [currentDogs, setCurrentDogs] = useState<Dog[]>([]);
 
-  // Escuchar cambios de estado en Firebase Auth para mantener sesión activa
+  // Verificación de sesión al inicio de la app con loading de unos segundos
+  // para dar tiempo suficiente a Firebase y al almacenamiento local de reconocer si el usuario está logeado.
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
-      if (firebaseUser) {
+    let isMounted = true;
+
+    const initializeAuthSession = async () => {
+      const startTime = Date.now();
+      const MIN_LOADING_TIME_MS = 2500; // ~2.5 segundos de loading para dar tiempo y animar
+
+      let detectedUser: AppUser | null = null;
+
+      // 1. Intentar recuperar usuario guardado en AsyncStorage
+      try {
+        const savedUserJson = await AsyncStorage.getItem('@juntitas_active_user');
+        if (savedUserJson) {
+          const parsed = JSON.parse(savedUserJson) as AppUser;
+          if (parsed && parsed.id) {
+            detectedUser = parsed;
+          }
+        }
+      } catch (storageErr) {
+        console.warn('Error leyendo sesión persistida en AsyncStorage:', storageErr);
+      }
+
+      // 2. Comprobar simultáneamente con Firebase Authentication & Firestore
+      try {
+        await new Promise<void>((resolve) => {
+          const timeoutId = setTimeout(() => {
+            resolve();
+          }, 2000);
+
+          const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+            clearTimeout(timeoutId);
+            unsubscribe();
+            if (firebaseUser) {
+              try {
+                const userDoc = await getDoc(doc(db, 'users', firebaseUser.uid));
+                if (userDoc.exists()) {
+                  detectedUser = userDoc.data() as AppUser;
+                  await AsyncStorage.setItem('@juntitas_active_user', JSON.stringify(detectedUser));
+                }
+              } catch (e) {
+                console.warn('Error sincronizando datos desde Firestore al iniciar:', e);
+              }
+            }
+            resolve();
+          });
+        });
+      } catch (authErr) {
+        console.warn('Error en verificación inicial de Firebase Auth:', authErr);
+      }
+
+      // 3. Respetar el tiempo de loading para que la transición sea fluida
+      const elapsed = Date.now() - startTime;
+      const remainingTime = Math.max(0, MIN_LOADING_TIME_MS - elapsed);
+      if (remainingTime > 0) {
+        await new Promise(resolve => setTimeout(resolve, remainingTime));
+      }
+
+      if (!isMounted) return;
+
+      // 4. Si el usuario está reconocido y logeado
+      if (detectedUser && detectedUser.id) {
+        setCurrentUser(detectedUser);
+        loadUserDogs(detectedUser.id).catch(() => {});
+        if (detectedUser.status === 'PENDIENTE_APROBACION' || detectedUser.status === 'SUSPENDIDO') {
+          setSessionState('pending_approval');
+        } else {
+          setSessionState('authenticated');
+        }
+      } else {
+        // No está logeado -> mandar al inicio (onboarding) como está previsto
+        setCurrentUser(ANONYMOUS_USER);
+        setSessionState('onboarding');
+      }
+    };
+
+    initializeAuthSession();
+
+    // Mantener sincronizado si cambia el estado de Firebase durante la vida de la app
+    const liveUnsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+      if (firebaseUser && sessionState === 'authenticated') {
         try {
           const userDoc = await getDoc(doc(db, 'users', firebaseUser.uid));
           if (userDoc.exists()) {
             const data = userDoc.data() as AppUser;
             setCurrentUser(data);
-            if (data.status === 'PENDIENTE_APROBACION' || data.status === 'SUSPENDIDO') {
-              setSessionState('pending_approval');
-            } else {
-              setSessionState('authenticated');
-            }
+            await AsyncStorage.setItem('@juntitas_active_user', JSON.stringify(data));
           }
         } catch (e) {
-          console.warn('Error sincronizando sesión de Firebase Auth:', e);
+          // Silencioso
         }
       }
     });
-    return () => unsubscribe();
+
+    return () => {
+      isMounted = false;
+      liveUnsubscribe();
+    };
   }, []);
 
   const getProfileInfo = (user: AppUser): ActiveProfileInfo => {
@@ -288,6 +383,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     // 3. Guardar documento de usuario en Cloud Firestore
     await createUserInDb(newUser);
+    try {
+      await AsyncStorage.setItem('@juntitas_active_user', JSON.stringify(newUser));
+    } catch (e) {
+      console.warn('Error guardando @juntitas_active_user:', e);
+    }
     setCurrentUser(newUser);
     setCurrentDogs(dogsList);
 
@@ -324,6 +424,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           // Silencioso
         }
         setCurrentUser(SUPER_ADMIN_USER);
+        try {
+          await AsyncStorage.setItem('@juntitas_active_user', JSON.stringify(SUPER_ADMIN_USER));
+        } catch (e) {}
         setCurrentDogs([]);
         setSessionState('authenticated');
         return { 
@@ -368,6 +471,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
 
     setCurrentUser(found);
+    try {
+      await AsyncStorage.setItem('@juntitas_active_user', JSON.stringify(found));
+    } catch (e) {}
+    if (found.id) {
+      await loadUserDogs(found.id);
+    }
     if (found.status === 'PENDIENTE_APROBACION' || found.status === 'SUSPENDIDO') {
       setSessionState('pending_approval');
     } else {
@@ -385,6 +494,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       // Silencioso
     }
     setCurrentUser(SUPER_ADMIN_USER);
+    try {
+      await AsyncStorage.setItem('@juntitas_active_user', JSON.stringify(SUPER_ADMIN_USER));
+    } catch (e) {}
     await loadUserDogs(SUPER_ADMIN_USER.id);
     setSessionState('authenticated');
     return { 
@@ -429,6 +541,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
 
       setCurrentUser(appUser);
+      try {
+        await AsyncStorage.setItem('@juntitas_active_user', JSON.stringify(appUser));
+      } catch (e) {}
       setSessionState('authenticated');
       return { success: true, message: `¡Bienvenido(a), ${appUser.displayName}!` };
     } catch (err: any) {
@@ -510,10 +625,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const logout = async () => {
     try {
+      await AsyncStorage.removeItem('@juntitas_active_user');
       await signOut(auth);
     } catch (e) {
       console.warn('SignOut error:', e);
     }
+    setCurrentUser(ANONYMOUS_USER);
+    setCurrentDogs([]);
     setSessionState('onboarding');
   };
 
@@ -525,11 +643,19 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           updatedAt: new Date()
         });
       }
-      setCurrentUser(prev => ({ ...prev, photoURL: photoUrl }));
+      const updated = { ...currentUser, photoURL: photoUrl };
+      setCurrentUser(updated);
+      try {
+        await AsyncStorage.setItem('@juntitas_active_user', JSON.stringify(updated));
+      } catch (e) {}
       return { success: true, message: 'Foto de perfil actualizada correctamente' };
     } catch (err: any) {
       console.warn('Error actualizando foto de perfil en Firestore:', err);
-      setCurrentUser(prev => ({ ...prev, photoURL: photoUrl }));
+      const updated = { ...currentUser, photoURL: photoUrl };
+      setCurrentUser(updated);
+      try {
+        await AsyncStorage.setItem('@juntitas_active_user', JSON.stringify(updated));
+      } catch (e) {}
       return { success: true, message: 'Foto de perfil actualizada' };
     }
   };
