@@ -85,6 +85,7 @@ export const CommunitiesScreen: React.FC = () => {
   const [photoUrl, setPhotoUrl] = useState('');
   const [selectedDogName, setSelectedDogName] = useState('');
   const [uploading, setUploading] = useState(false);
+  const [returnToDetailOnClose, setReturnToDetailOnClose] = useState(false);
 
   // Campos para solicitud / creación directa de comunidad
   const [reqName, setReqName] = useState('');
@@ -454,9 +455,12 @@ export const CommunitiesScreen: React.FC = () => {
     const finalUrl = photoUrl.trim() || 'https://images.unsplash.com/photo-1548199973-03cce0bbc87b?w=800';
 
     setUploading(true);
+    const targetCommId = selectedCommunityDetail?.id || 'general';
+    const targetCommName = selectedCommunityDetail?.name || 'Comunidad Oficial Juntitas';
+
     const res = await uploadCommunityPhoto({
-      communityId: 'general',
-      communityName: 'Comunidad Oficial Juntitas',
+      communityId: targetCommId,
+      communityName: targetCommName,
       uploaderId: currentUser.id,
       uploaderName: currentUser.displayName,
       uploaderAvatar: currentUser.photoURL || undefined,
@@ -472,6 +476,10 @@ export const CommunitiesScreen: React.FC = () => {
       setPhotoCaption('');
       setPhotoUrl('');
       loadPhotos();
+      if (returnToDetailOnClose) {
+        setShowDetailModal(true);
+        setReturnToDetailOnClose(false);
+      }
     }
   };
 
@@ -524,14 +532,48 @@ export const CommunitiesScreen: React.FC = () => {
   };
 
   const handleOpenUploadModal = (comm?: Community) => {
-    if (comm) {
-      setSelectedCommunityDetail(comm);
+    const targetComm = comm || selectedCommunityDetail;
+    if (targetComm) {
+      const isPrimary = (activeProfile.roleType === 'primary_admin' && activeProfile.communityIdManaged === targetComm.id) || targetComm.primaryAdminId === currentUser.id;
+      const isSecondary = activeProfile.roleType === 'secondary_admin' && activeProfile.communityIdManaged === targetComm.id;
+      const isMember = isPrimary || isSecondary || (targetComm.members && targetComm.members.includes(currentUser.id)) || isSuperAdmin;
+
+      if (!isMember) {
+        showToast(`Debes unirte primero a la comunidad "${targetComm.name}" para poder compartir fotos.`, 'warning');
+        return;
+      }
+      setSelectedCommunityDetail(targetComm);
     }
+
     if (currentDogs && currentDogs.length > 0 && !selectedDogName) {
       setSelectedDogName(currentDogs[0].name);
     }
+
+    if (showDetailModal) {
+      setReturnToDetailOnClose(true);
+      setShowDetailModal(false);
+    } else {
+      setReturnToDetailOnClose(false);
+    }
+
     setShowUploadModal(true);
   };
+
+  const handleCloseUploadModal = () => {
+    setShowUploadModal(false);
+    if (returnToDetailOnClose) {
+      setShowDetailModal(true);
+      setReturnToDetailOnClose(false);
+    }
+  };
+
+  const isTutor = currentUser?.filterProfileType === 'tutor' || (!isSuperAdmin && currentUser?.roleType === 'member');
+  const canCreateOrRequestCommunity = !isTutor && (
+    isSuperAdmin || 
+    currentUser?.roleType === 'primary_admin' || 
+    currentUser?.roleType === 'secondary_admin' || 
+    currentUser?.filterProfileType === 'community_admin'
+  );
 
   const filteredCommunities = communities.filter(c => 
     c.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -546,13 +588,15 @@ export const CommunitiesScreen: React.FC = () => {
           <Text style={styles.title}>🐾 Comunidades Caninas</Text>
           <Text style={styles.subtitle}>Encuentra el grupo ideal para tu perrito</Text>
         </View>
-        <TouchableOpacity 
-          style={[styles.newCommButton, isSuperAdmin && { backgroundColor: '#DC2626' }]} 
-          onPress={() => setShowRequestModal(true)}
-        >
-          <Ionicons name={isSuperAdmin ? "shield-checkmark" : "add"} size={18} color="#FFFFFF" />
-          <Text style={styles.newCommButtonText}>{isSuperAdmin ? 'Crear Oficial' : 'Solicitar'}</Text>
-        </TouchableOpacity>
+        {canCreateOrRequestCommunity && (
+          <TouchableOpacity 
+            style={[styles.newCommButton, isSuperAdmin && { backgroundColor: '#DC2626' }]} 
+            onPress={() => setShowRequestModal(true)}
+          >
+            <Ionicons name={isSuperAdmin ? "shield-checkmark" : "add"} size={18} color="#FFFFFF" />
+            <Text style={styles.newCommButtonText}>{isSuperAdmin ? 'Crear Oficial' : 'Solicitar'}</Text>
+          </TouchableOpacity>
+        )}
       </View>
 
       {/* Selector de Pestañas: Comunidades vs Álbum de Fotos */}
@@ -904,107 +948,7 @@ export const CommunitiesScreen: React.FC = () => {
         </View>
       </Modal>
 
-      {/* Modal para Compartir Fotos en la Galería */}
-      <Modal visible={showUploadModal} transparent animationType="slide">
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalCard}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>📸 Compartir Foto en la Galería</Text>
-              <TouchableOpacity onPress={() => setShowUploadModal(false)}>
-                <Ionicons name="close" size={24} color="#64748B" />
-              </TouchableOpacity>
-            </View>
 
-            <Text style={styles.modalIntro}>
-              Comparte fotos de tu perrito en juntas o paseos comunitarios. Ganarás +15 🐾 Huellitas.
-            </Text>
-
-            <Text style={styles.fieldLabel}>Perrito en la foto:</Text>
-            {currentDogs && currentDogs.length > 0 ? (
-              <View style={{ marginBottom: 12 }}>
-                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8, paddingVertical: 4 }}>
-                  {currentDogs.map(d => {
-                    const isSelected = selectedDogName === d.name;
-                    return (
-                      <TouchableOpacity
-                        key={d.id}
-                        style={[styles.dogSelectCard, isSelected && styles.dogSelectCardActive]}
-                        onPress={() => setSelectedDogName(d.name)}
-                        activeOpacity={0.8}
-                      >
-                        <Image 
-                          source={{ uri: d.photoUrls?.[0] || DEFAULT_DOG_PHOTOS[0] }} 
-                          style={styles.dogSelectAvatar} 
-                        />
-                        <View style={{ marginLeft: 8 }}>
-                          <Text style={[styles.dogSelectName, isSelected && styles.dogSelectNameActive]}>
-                            {d.name}
-                          </Text>
-                          <Text style={styles.dogSelectBreed}>{d.breed}</Text>
-                        </View>
-                        {isSelected && (
-                          <Ionicons name="checkmark-circle" size={18} color="#0284C7" style={{ marginLeft: 6 }} />
-                        )}
-                      </TouchableOpacity>
-                    );
-                  })}
-                </ScrollView>
-              </View>
-            ) : (
-              <TextInput
-                placeholder="Nombre de tu perrito (ej: Firulais)"
-                value={selectedDogName}
-                onChangeText={setSelectedDogName}
-                style={styles.modalInput}
-              />
-            )}
-
-            <Text style={styles.fieldLabel}>Foto:</Text>
-            <View style={styles.photoActionRow}>
-              <TouchableOpacity style={styles.photoActionButton} onPress={handleTakeCommunityPhoto}>
-                <Ionicons name="camera" size={18} color="#0284C7" />
-                <Text style={styles.photoActionText}>Tomar Foto</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={styles.photoActionButton} onPress={handlePickCommunityPhotoGallery}>
-                <Ionicons name="images" size={18} color="#0284C7" />
-                <Text style={styles.photoActionText}>De Galería</Text>
-              </TouchableOpacity>
-            </View>
-
-            {photoUrl ? (
-              <View style={styles.previewImageCard}>
-                <Image source={{ uri: photoUrl }} style={styles.previewImageThumb} />
-                <View style={{ flex: 1, marginLeft: 10 }}>
-                  <Text style={styles.previewSuccessText}>✓ Foto lista para compartir</Text>
-                  <TouchableOpacity onPress={() => setPhotoUrl('')} style={{ marginTop: 2 }}>
-                    <Text style={styles.removePhotoText}>Cambiar foto</Text>
-                  </TouchableOpacity>
-                </View>
-              </View>
-            ) : null}
-
-            <Text style={styles.fieldLabel}>Pie de foto o experiencia:</Text>
-            <TextInput
-              placeholder="¿Qué estaban haciendo? (ej: ¡Paseo increíble en el parque!)"
-              value={photoCaption}
-              onChangeText={setPhotoCaption}
-              multiline
-              numberOfLines={3}
-              style={[styles.modalInput, { height: 70 }]}
-            />
-
-            <TouchableOpacity 
-              style={[styles.submitReqButton, uploading && { opacity: 0.6 }]} 
-              onPress={handleUploadPhoto}
-              disabled={uploading}
-            >
-              <Text style={styles.submitReqButtonText}>
-                {uploading ? 'Subiendo foto...' : 'Publicar Foto (+15 🐾)'}
-              </Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </Modal>
 
       {/* Modal Detalle de la Comunidad (Perritos Asistentes, Fotos y Juntas) */}
       <Modal visible={showDetailModal} transparent animationType="slide">
@@ -1197,15 +1141,44 @@ export const CommunitiesScreen: React.FC = () => {
                 {/* Contenido Pestaña 2: Fotos Comunitarias */}
                 {communityDetailTab === 'photos' && (
                   <ScrollView style={styles.detailContentScroll} showsVerticalScrollIndicator={false}>
-                    <TouchableOpacity 
-                      style={[styles.uploadPhotoBtn, { marginVertical: 8 }]}
-                      onPress={() => {
-                        handleOpenUploadModal(selectedCommunityDetail);
-                      }}
-                    >
-                      <Ionicons name="camera" size={16} color="#FFFFFF" />
-                      <Text style={styles.uploadPhotoBtnText}>+ Compartir Foto en esta Comunidad (+15 🐾)</Text>
-                    </TouchableOpacity>
+                    {(() => {
+                      const isPrimary = (activeProfile.roleType === 'primary_admin' && activeProfile.communityIdManaged === selectedCommunityDetail.id) || selectedCommunityDetail.primaryAdminId === currentUser.id;
+                      const isSecondary = activeProfile.roleType === 'secondary_admin' && activeProfile.communityIdManaged === selectedCommunityDetail.id;
+                      const isMember = isPrimary || isSecondary || (selectedCommunityDetail.members && selectedCommunityDetail.members.includes(currentUser.id)) || isSuperAdmin;
+
+                      if (!isMember) {
+                        return (
+                          <View style={styles.notJoinedBanner}>
+                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+                              <Ionicons name="lock-closed" size={16} color="#B45309" />
+                              <Text style={styles.notJoinedBannerTitle}>Solo miembros pueden compartir fotos</Text>
+                            </View>
+                            <Text style={styles.notJoinedBannerSub}>
+                              Únete a {selectedCommunityDetail.name} para subir fotos de tus perritos y ganar +15 🐾 Huellitas.
+                            </Text>
+                            <TouchableOpacity 
+                              style={styles.notJoinedBannerBtn}
+                              onPress={() => handleJoin(selectedCommunityDetail)}
+                            >
+                              <Ionicons name="add-circle" size={14} color="#FFFFFF" />
+                              <Text style={styles.notJoinedBannerBtnText}>Unirme a esta comunidad (+10 🐾)</Text>
+                            </TouchableOpacity>
+                          </View>
+                        );
+                      }
+
+                      return (
+                        <TouchableOpacity 
+                          style={[styles.uploadPhotoBtn, { marginVertical: 8 }]}
+                          onPress={() => {
+                            handleOpenUploadModal(selectedCommunityDetail);
+                          }}
+                        >
+                          <Ionicons name="camera" size={16} color="#FFFFFF" />
+                          <Text style={styles.uploadPhotoBtnText}>+ Compartir Foto en esta Comunidad (+15 🐾)</Text>
+                        </TouchableOpacity>
+                      );
+                    })()}
 
                     {(() => {
                       const commPhotos = photos.filter(p => 
@@ -1337,6 +1310,108 @@ export const CommunitiesScreen: React.FC = () => {
                 )}
               </>
             )}
+          </View>
+        </View>
+      </Modal>
+
+      {/* Modal para Compartir Fotos en la Galería (Renderizado por encima de todos los modales) */}
+      <Modal visible={showUploadModal} transparent animationType="slide">
+        <View style={[styles.modalOverlay, { zIndex: 99999 }]}>
+          <View style={[styles.modalCard, { zIndex: 100000, elevation: 30 }]}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>📸 Compartir Foto en la Galería</Text>
+              <TouchableOpacity onPress={handleCloseUploadModal}>
+                <Ionicons name="close" size={24} color="#64748B" />
+              </TouchableOpacity>
+            </View>
+
+            <Text style={styles.modalIntro}>
+              Comparte fotos de tu perrito en juntas o paseos comunitarios. Ganarás +15 🐾 Huellitas.
+            </Text>
+
+            <Text style={styles.fieldLabel}>Perrito en la foto:</Text>
+            {currentDogs && currentDogs.length > 0 ? (
+              <View style={{ marginBottom: 12 }}>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8, paddingVertical: 4 }}>
+                  {currentDogs.map(d => {
+                    const isSelected = selectedDogName === d.name;
+                    return (
+                      <TouchableOpacity
+                        key={d.id}
+                        style={[styles.dogSelectCard, isSelected && styles.dogSelectCardActive]}
+                        onPress={() => setSelectedDogName(d.name)}
+                        activeOpacity={0.8}
+                      >
+                        <Image 
+                          source={{ uri: d.photoUrls?.[0] || DEFAULT_DOG_PHOTOS[0] }} 
+                          style={styles.dogSelectAvatar} 
+                        />
+                        <View style={{ marginLeft: 8 }}>
+                          <Text style={[styles.dogSelectName, isSelected && styles.dogSelectNameActive]}>
+                            {d.name}
+                          </Text>
+                          <Text style={styles.dogSelectBreed}>{d.breed}</Text>
+                        </View>
+                        {isSelected && (
+                          <Ionicons name="checkmark-circle" size={18} color="#0284C7" style={{ marginLeft: 6 }} />
+                        )}
+                      </TouchableOpacity>
+                    );
+                  })}
+                </ScrollView>
+              </View>
+            ) : (
+              <TextInput
+                placeholder="Nombre de tu perrito (ej: Firulais)"
+                value={selectedDogName}
+                onChangeText={setSelectedDogName}
+                style={styles.modalInput}
+              />
+            )}
+
+            <Text style={styles.fieldLabel}>Foto:</Text>
+            <View style={styles.photoActionRow}>
+              <TouchableOpacity style={styles.photoActionButton} onPress={handleTakeCommunityPhoto}>
+                <Ionicons name="camera" size={18} color="#0284C7" />
+                <Text style={styles.photoActionText}>Tomar Foto</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.photoActionButton} onPress={handlePickCommunityPhotoGallery}>
+                <Ionicons name="images" size={18} color="#0284C7" />
+                <Text style={styles.photoActionText}>De Galería</Text>
+              </TouchableOpacity>
+            </View>
+
+            {photoUrl ? (
+              <View style={styles.previewImageCard}>
+                <Image source={{ uri: photoUrl }} style={styles.previewImageThumb} />
+                <View style={{ flex: 1, marginLeft: 10 }}>
+                  <Text style={styles.previewSuccessText}>✓ Foto lista para compartir</Text>
+                  <TouchableOpacity onPress={() => setPhotoUrl('')} style={{ marginTop: 2 }}>
+                    <Text style={styles.removePhotoText}>Cambiar foto</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            ) : null}
+
+            <Text style={styles.fieldLabel}>Pie de foto o experiencia:</Text>
+            <TextInput
+              placeholder="¿Qué estaban haciendo? (ej: ¡Paseo increíble en el parque!)"
+              value={photoCaption}
+              onChangeText={setPhotoCaption}
+              multiline
+              numberOfLines={3}
+              style={[styles.modalInput, { height: 70 }]}
+            />
+
+            <TouchableOpacity 
+              style={[styles.submitReqButton, uploading && { opacity: 0.6 }]} 
+              onPress={handleUploadPhoto}
+              disabled={uploading}
+            >
+              <Text style={styles.submitReqButtonText}>
+                {uploading ? 'Subiendo foto...' : 'Publicar Foto (+15 🐾)'}
+              </Text>
+            </TouchableOpacity>
           </View>
         </View>
       </Modal>
@@ -2951,5 +3026,38 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#0369A1',
     lineHeight: 16,
+  },
+  notJoinedBanner: {
+    backgroundColor: '#FFFBEB',
+    borderWidth: 1.5,
+    borderColor: '#FDE68A',
+    borderRadius: 16,
+    padding: 14,
+    marginVertical: 10,
+  },
+  notJoinedBannerTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#B45309',
+  },
+  notJoinedBannerSub: {
+    fontSize: 12,
+    color: '#78350F',
+    lineHeight: 16,
+    marginBottom: 10,
+  },
+  notJoinedBannerBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#0284C7',
+    paddingVertical: 10,
+    borderRadius: 12,
+    gap: 6,
+  },
+  notJoinedBannerBtnText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#FFFFFF',
   },
 });

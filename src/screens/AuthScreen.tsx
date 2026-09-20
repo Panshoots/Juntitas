@@ -127,14 +127,9 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
     let extraDogData: any = undefined;
 
     if (profileType === 'tutor') {
-      if (!dogName || !dogBreed) {
-        setLoading(false);
-        showToast('Por favor ingresa el nombre y raza de tu perrito.', 'warning');
-        return;
-      }
       role = 'member';
       status = 'ACTIVO';
-      extraDogData = { name: dogName, breed: dogBreed, size: dogSize };
+      extraDogData = undefined;
     } else if (profileType === 'community_admin') {
       if (!communityName || !communityInstagram) {
         setLoading(false);
@@ -312,35 +307,16 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
             style={styles.input}
           />
 
-          {/* Campos según filtro de perfil */}
+          {/* Mensaje amigable para tutor */}
           {profileType === 'tutor' && (
-            <View style={styles.subCard}>
-              <Text style={styles.subCardTitle}>🐾 Datos de tu primer perrito (Pasaporte Canino):</Text>
-              <TextInput
-                placeholder="Nombre de tu perrito (ej: Firulais)"
-                value={dogName}
-                onChangeText={setDogName}
-                style={styles.input}
-              />
-              <TextInput
-                placeholder="Raza (ej: Golden Retriever, Pug, Mestizo)"
-                value={dogBreed}
-                onChangeText={setDogBreed}
-                style={styles.input}
-              />
-              <View style={styles.sizeRow}>
-                {(['pequeño', 'mediano', 'grande'] as const).map(sz => (
-                  <TouchableOpacity 
-                    key={sz}
-                    style={[styles.sizeOption, dogSize === sz && styles.sizeOptionActive]}
-                    onPress={() => setDogSize(sz)}
-                  >
-                    <Text style={[styles.sizeOptionText, dogSize === sz && styles.sizeOptionTextActive]}>
-                      {sz.toUpperCase()}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
+            <View style={[styles.subCard, { borderColor: '#BAE6FD', backgroundColor: '#F0F9FF' }]}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+                <Ionicons name="paw" size={16} color="#0284C7" />
+                <Text style={[styles.subCardTitle, { color: '#0369A1' }]}>Registro como Tutor:</Text>
               </View>
+              <Text style={[styles.filterNote, { color: '#0C4A6E', marginBottom: 0 }]}>
+                Una vez creada tu cuenta podrás registrar a tus perritos desde tu perfil con el catálogo oficial de razas y activar su Pasaporte Perruno Oficial con Huellitas (+50 🐾).
+              </Text>
             </View>
           )}
 
