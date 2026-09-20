@@ -14,7 +14,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Community, SecondaryAdminInfo, SecondaryAdminPermissions } from '../models/Community';
+import { Community, SecondaryAdminInfo, SecondaryAdminPermissions, CommunityAccessType } from '../models/Community';
 import { 
   getCommunities, 
   joinCommunity, 
@@ -25,8 +25,13 @@ import {
   removeSecondaryAdmin,
   addSecondaryAdmin,
   DEFAULT_SECONDARY_PERMISSIONS,
-  updateCommunityPhotosAndInfo
+  updateCommunityPhotosAndInfo,
+  approveMemberRequest,
+  rejectMemberRequest,
+  updateCommunityAccessType
 } from '../services/communityService';
+import { AppUser } from '../models/User';
+import { getUsersFromDb } from '../services/userService';
 import { 
   getCommunityPhotos, 
   uploadCommunityPhoto, 
@@ -93,6 +98,16 @@ export const CommunitiesScreen: React.FC = () => {
   const [reqInstagram, setReqInstagram] = useState('');
   const [reqComuna, setReqComuna] = useState('Las Condes');
   const [reqSize, setReqSize] = useState('50');
+  const [reqAccessType, setReqAccessType] = useState<CommunityAccessType>('open');
+
+  // Solicitudes de miembros pendientes (Modelo Híbrido Con Aprobación)
+  const [pendingApplicants, setPendingApplicants] = useState<{
+    userId: string;
+    user?: AppUser;
+    dogs: Dog[];
+  }[]>([]);
+  const [loadingPending, setLoadingPending] = useState(false);
+  const [actionLoadingUserId, setActionLoadingUserId] = useState<string | null>(null);
 
   // Modal de Detalle de Comunidad (Perritos Asistentes y Fotos)
   const [selectedCommunityDetail, setSelectedCommunityDetail] = useState<Community | null>(null);
@@ -313,11 +328,23 @@ export const CommunitiesScreen: React.FC = () => {
       showToast(`¡Ya eres miembro de la comunidad ${community.name}!`, 'info');
       return;
     }
+    const isAlreadyPending = community.pendingMembers && community.pendingMembers.includes(currentUser.id);
+    if (isAlreadyPending) {
+      showToast(`Tu solicitud para ${community.name} ya fue enviada y está en revisión por el creador.`, 'info');
+      return;
+    }
     const res = await joinCommunity(community.id, currentUser.id);
     showToast(res.message, res.success ? 'success' : 'error');
     if (res.success) {
-      await awardPaws(currentUser.id, 'community_joined', community.id);
-      loadCommunities();
+      if (res.status === 'JOINED') {
+        await awardPaws(currentUser.id, 'community_joined', community.id);
+      }
+      await loadCommunities();
+      if (selectedCommunityDetail && selectedCommunityDetail.id === community.id) {
+        const comms = await getCommunities();
+        const updated = comms.find(c => c.id === community.id);
+        if (updated) setSelectedCommunityDetail(updated);
+      }
     }
   };
 
@@ -332,6 +359,30 @@ export const CommunitiesScreen: React.FC = () => {
       return;
     }
 
+    if (isSuperAdmin) {
+      const res = await createOfficialCommunity({
+        name: reqName,
+        description: reqDesc,
+        instagramHandle: reqInstagram,
+        region: selectedRegionName,
+        comuna: reqComuna,
+        primaryAdminId: currentUser.id,
+        accessType: reqAccessType
+      });
+      if (res.success) {
+        showToast(`¡Comunidad oficial "${reqName}" creada y publicada exitosamente!`, 'success');
+        setShowRequestModal(false);
+        setReqName('');
+        setReqDesc('');
+        setReqInstagram('');
+        setReqAccessType('open');
+        loadCommunities();
+      } else {
+        showToast(res.message, 'error');
+      }
+      return;
+    }
+
     const res = await submitCommunityRequest({
       communityName: reqName,
       applicantId: currentUser.id,
@@ -342,7 +393,8 @@ export const CommunitiesScreen: React.FC = () => {
       verificationEvidenceUrls: [],
       region: selectedRegionName,
       comuna: reqComuna,
-      approximateSize: parseInt(reqSize, 10) || 50
+      approximateSize: parseInt(reqSize, 10) || 50,
+      accessType: reqAccessType
     });
 
     if (res.success) {
@@ -355,18 +407,104 @@ export const CommunitiesScreen: React.FC = () => {
       setReqName('');
       setReqDesc('');
       setReqInstagram('');
+      setReqAccessType('open');
     } else {
       showToast(res.message, 'error');
     }
   };
 
-  const handleOpenAdminModal = (comm: Community) => {
+  const loadPendingApplicants = async (comm: Community) => {
+    if (!comm.pendingMembers || comm.pendingMembers.length === 0) {
+      setPendingApplicants([]);
+      return;
+    }
+    setLoadingPending(true);
+    try {
+      const [allUsers, allDogs] = await Promise.all([
+        getUsersFromDb(),
+        getAllDogsFromDb()
+      ]);
+      const list = (comm.pendingMembers || []).map(userId => {
+        const u = allUsers.find(user => user.id === userId);
+        const userDogs = allDogs.filter(dog => dog.ownerId === userId);
+        return {
+          userId,
+          user: u,
+          dogs: userDogs
+        };
+      });
+      setPendingApplicants(list);
+    } catch (err) {
+      console.warn('Error cargando aspirantes pendientes:', err);
+    } finally {
+      setLoadingPending(false);
+    }
+  };
+
+  const handleOpenAdminModal = async (comm: Community) => {
     setSelectedAdminComm(comm);
     const list = getSecondaryAdminsForCommunity(comm);
     setSecAdminsList(list);
     setEditingAdminId(null);
     setShowAddSecAdminForm(false);
     setShowAdminModal(true);
+    await loadPendingApplicants(comm);
+  };
+
+  const handleApproveApplicant = async (applicantUserId: string) => {
+    if (!selectedAdminComm) return;
+    setActionLoadingUserId(applicantUserId);
+    const res = await approveMemberRequest(selectedAdminComm.id, applicantUserId, currentUser.id);
+    setActionLoadingUserId(null);
+    showToast(res.message, res.success ? 'success' : 'error');
+    if (res.success) {
+      const updatedPending = (selectedAdminComm.pendingMembers || []).filter(id => id !== applicantUserId);
+      const updatedMembers = [...(selectedAdminComm.members || []), applicantUserId];
+      const updatedComm: Community = {
+        ...selectedAdminComm,
+        pendingMembers: updatedPending,
+        members: updatedMembers,
+        membersCount: (selectedAdminComm.membersCount || 0) + 1
+      };
+      setSelectedAdminComm(updatedComm);
+      setPendingApplicants(prev => prev.filter(p => p.userId !== applicantUserId));
+      loadCommunities();
+    }
+  };
+
+  const handleRejectApplicant = async (applicantUserId: string) => {
+    if (!selectedAdminComm) return;
+    const confirmReject = confirm('¿Estás seguro de que deseas rechazar esta solicitud de ingreso?');
+    if (!confirmReject) return;
+
+    setActionLoadingUserId(applicantUserId);
+    const res = await rejectMemberRequest(selectedAdminComm.id, applicantUserId, currentUser.id);
+    setActionLoadingUserId(null);
+    showToast(res.message, res.success ? 'success' : 'error');
+    if (res.success) {
+      const updatedPending = (selectedAdminComm.pendingMembers || []).filter(id => id !== applicantUserId);
+      const updatedComm: Community = {
+        ...selectedAdminComm,
+        pendingMembers: updatedPending
+      };
+      setSelectedAdminComm(updatedComm);
+      setPendingApplicants(prev => prev.filter(p => p.userId !== applicantUserId));
+      loadCommunities();
+    }
+  };
+
+  const handleToggleAccessType = async (newType: CommunityAccessType) => {
+    if (!selectedAdminComm) return;
+    if (selectedAdminComm.accessType === newType) return;
+    const res = await updateCommunityAccessType(selectedAdminComm.id, newType, currentUser.id);
+    showToast(res.message, res.success ? 'success' : 'error');
+    if (res.success) {
+      setSelectedAdminComm(prev => prev ? ({ ...prev, accessType: newType }) : null);
+      loadCommunities();
+      if (selectedCommunityDetail && selectedCommunityDetail.id === selectedAdminComm.id) {
+        setSelectedCommunityDetail(prev => prev ? ({ ...prev, accessType: newType }) : null);
+      }
+    }
   };
 
   const handleTogglePermission = (permKey: keyof SecondaryAdminPermissions) => {
@@ -654,6 +792,8 @@ export const CommunitiesScreen: React.FC = () => {
               const isPrimary = (activeProfile.roleType === 'primary_admin' && activeProfile.communityIdManaged === item.id) || item.primaryAdminId === currentUser.id;
               const isSecondary = activeProfile.roleType === 'secondary_admin' && activeProfile.communityIdManaged === item.id;
               const isMember = isPrimary || isSecondary || (item.members && item.members.includes(currentUser.id));
+              const isPending = !isMember && item.pendingMembers && item.pendingMembers.includes(currentUser.id);
+              const pendingCount = item.pendingMembers?.length || 0;
 
               return (
                 <TouchableOpacity 
@@ -664,10 +804,23 @@ export const CommunitiesScreen: React.FC = () => {
                   <Image source={{ uri: item.logoUrl }} style={styles.commLogo} />
                   <View style={styles.commDetails}>
                     <View style={styles.commNameRow}>
-                      <Text style={styles.commName}>{item.name}</Text>
-                      {item.isVerified && (
-                        <Ionicons name="checkmark-circle" size={18} color="#0284C7" style={{ marginLeft: 4 }} />
-                      )}
+                      <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 6 }}>
+                        <Text style={styles.commName}>{item.name}</Text>
+                        {item.isVerified && (
+                          <Ionicons name="checkmark-circle" size={17} color="#0284C7" />
+                        )}
+                        {item.accessType === 'approval_required' ? (
+                          <View style={styles.accessBadgeApproval}>
+                            <Ionicons name="lock-closed" size={10} color="#B45309" />
+                            <Text style={styles.accessBadgeApprovalText}>Con Aprobación</Text>
+                          </View>
+                        ) : (
+                          <View style={styles.accessBadgeOpen}>
+                            <Ionicons name="globe-outline" size={10} color="#059669" />
+                            <Text style={styles.accessBadgeOpenText}>Abierta</Text>
+                          </View>
+                        )}
+                      </View>
                     </View>
 
                     {isPrimary && (
@@ -703,12 +856,25 @@ export const CommunitiesScreen: React.FC = () => {
                             <Ionicons name="checkmark-circle" size={13} color="#059669" />
                             <Text style={styles.joinedBadgeText}>Miembro</Text>
                           </View>
+                        ) : isPending ? (
+                          <View style={[styles.joinedBadge, { backgroundColor: '#FEF3C7', borderColor: '#FDE68A', borderWidth: 1 }]}>
+                            <Ionicons name="time" size={12} color="#D97706" />
+                            <Text style={[styles.joinedBadgeText, { color: '#B45309', fontSize: 11 }]}>Pendiente</Text>
+                          </View>
+                        ) : item.accessType === 'approval_required' ? (
+                          <TouchableOpacity 
+                            style={[styles.joinButton, { backgroundColor: '#D97706' }]} 
+                            onPress={() => handleJoin(item)}
+                          >
+                            <Ionicons name="mail" size={12} color="#FFFFFF" style={{ marginRight: 4 }} />
+                            <Text style={styles.joinButtonText}>Solicitar</Text>
+                          </TouchableOpacity>
                         ) : (
                           <TouchableOpacity 
                             style={styles.joinButton} 
                             onPress={() => handleJoin(item)}
                           >
-                            <Text style={styles.joinButtonText}>Unirme (+10 🐾)</Text>
+                            <Text style={styles.joinButtonText}>+ Unirme (+10 🐾)</Text>
                           </TouchableOpacity>
                         )}
                       </View>
@@ -721,7 +887,12 @@ export const CommunitiesScreen: React.FC = () => {
                           onPress={() => handleOpenAdminModal(item)}
                         >
                           <Ionicons name="people-circle" size={15} color="#B45309" />
-                          <Text style={styles.manageSecAdminsText}>Administradores</Text>
+                          <Text style={styles.manageSecAdminsText}>Administración</Text>
+                          {pendingCount > 0 && (
+                            <View style={styles.pendingBadgeCounter}>
+                              <Text style={styles.pendingBadgeCounterText}>{pendingCount}</Text>
+                            </View>
+                          )}
                         </TouchableOpacity>
 
                         <TouchableOpacity 
@@ -729,7 +900,7 @@ export const CommunitiesScreen: React.FC = () => {
                           onPress={() => handleOpenEditCommPhoto(item)}
                         >
                           <Ionicons name="camera" size={14} color="#0284C7" />
-                          <Text style={styles.changeCommPhotoBtnText}>Cambiar Foto</Text>
+                          <Text style={styles.changeCommPhotoBtnText}>Foto</Text>
                         </TouchableOpacity>
                       </View>
                     )}
@@ -927,6 +1098,53 @@ export const CommunitiesScreen: React.FC = () => {
               <Ionicons name="chevron-forward" size={18} color="#94A3B8" />
             </TouchableOpacity>
 
+            <Text style={styles.inputSectionLabel}>Tipo de Acceso:</Text>
+            <View style={styles.accessTypeSelectorRow}>
+              <TouchableOpacity
+                style={[
+                  styles.accessTypeCard,
+                  reqAccessType === 'open' && styles.accessTypeCardActive
+                ]}
+                onPress={() => setReqAccessType('open')}
+              >
+                <Ionicons 
+                  name={reqAccessType === 'open' ? 'radio-button-on' : 'radio-button-off'} 
+                  size={16} 
+                  color={reqAccessType === 'open' ? '#0284C7' : '#94A3B8'} 
+                />
+                <View style={{ flex: 1, marginLeft: 8 }}>
+                  <Text style={[styles.accessTypeCardTitle, reqAccessType === 'open' && styles.accessTypeCardTitleActive]}>
+                    🌐 Abierta a Todos
+                  </Text>
+                  <Text style={styles.accessTypeCardSub}>
+                    Cualquiera se une directamente con 1 clic
+                  </Text>
+                </View>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[
+                  styles.accessTypeCard,
+                  reqAccessType === 'approval_required' && styles.accessTypeCardActive
+                ]}
+                onPress={() => setReqAccessType('approval_required')}
+              >
+                <Ionicons 
+                  name={reqAccessType === 'approval_required' ? 'radio-button-on' : 'radio-button-off'} 
+                  size={16} 
+                  color={reqAccessType === 'approval_required' ? '#0284C7' : '#94A3B8'} 
+                />
+                <View style={{ flex: 1, marginLeft: 8 }}>
+                  <Text style={[styles.accessTypeCardTitle, reqAccessType === 'approval_required' && styles.accessTypeCardTitleActive]}>
+                    🔒 Con Aprobación
+                  </Text>
+                  <Text style={styles.accessTypeCardSub}>
+                    Requiere autorización previa del creador
+                  </Text>
+                </View>
+              </TouchableOpacity>
+            </View>
+
             <TextInput
               placeholder="Descripción y propósito"
               value={reqDesc}
@@ -941,7 +1159,7 @@ export const CommunitiesScreen: React.FC = () => {
               onPress={handleSendRequest}
             >
               <Text style={styles.submitReqButtonText}>
-                Enviar para Validación
+                {isSuperAdmin ? 'Crear y Publicar Comunidad Oficial' : 'Enviar para Validación'}
               </Text>
             </TouchableOpacity>
           </View>
@@ -960,12 +1178,23 @@ export const CommunitiesScreen: React.FC = () => {
                   <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1, gap: 10 }}>
                     <Image source={{ uri: selectedCommunityDetail.logoUrl }} style={styles.detailCommLogo} />
                     <View style={{ flex: 1 }}>
-                      <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 6 }}>
                         <Text style={styles.detailCommTitle} numberOfLines={1}>
                           {selectedCommunityDetail.name}
                         </Text>
                         {selectedCommunityDetail.isVerified && (
-                          <Ionicons name="checkmark-circle" size={16} color="#0284C7" style={{ marginLeft: 4 }} />
+                          <Ionicons name="checkmark-circle" size={16} color="#0284C7" />
+                        )}
+                        {selectedCommunityDetail.accessType === 'approval_required' ? (
+                          <View style={styles.accessBadgeApproval}>
+                            <Ionicons name="lock-closed" size={10} color="#B45309" />
+                            <Text style={styles.accessBadgeApprovalText}>Con Aprobación</Text>
+                          </View>
+                        ) : (
+                          <View style={styles.accessBadgeOpen}>
+                            <Ionicons name="globe-outline" size={10} color="#059669" />
+                            <Text style={styles.accessBadgeOpenText}>Abierta</Text>
+                          </View>
                         )}
                       </View>
                       <Text style={styles.detailCommLocation}>
@@ -975,14 +1204,28 @@ export const CommunitiesScreen: React.FC = () => {
                         const isPrimary = (activeProfile.roleType === 'primary_admin' && activeProfile.communityIdManaged === selectedCommunityDetail.id) || selectedCommunityDetail.primaryAdminId === currentUser.id;
                         const isSecondary = activeProfile.roleType === 'secondary_admin' && activeProfile.communityIdManaged === selectedCommunityDetail.id;
                         const isMember = isPrimary || isSecondary || (selectedCommunityDetail.members && selectedCommunityDetail.members.includes(currentUser.id));
+                        const isPending = !isMember && selectedCommunityDetail.pendingMembers && selectedCommunityDetail.pendingMembers.includes(currentUser.id);
 
                         return (
-                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 4 }}>
+                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 4, flexWrap: 'wrap' }}>
                             {isMember ? (
                               <View style={styles.detailMemberBadge}>
                                 <Ionicons name="checkmark-circle" size={13} color="#15803D" />
                                 <Text style={styles.detailMemberBadgeText}>Eres miembro</Text>
                               </View>
+                            ) : isPending ? (
+                              <View style={[styles.detailMemberBadge, { backgroundColor: '#FEF3C7', borderColor: '#FDE68A', borderWidth: 1 }]}>
+                                <Ionicons name="time" size={13} color="#D97706" />
+                                <Text style={[styles.detailMemberBadgeText, { color: '#B45309' }]}>Solicitud Pendiente</Text>
+                              </View>
+                            ) : selectedCommunityDetail.accessType === 'approval_required' ? (
+                              <TouchableOpacity 
+                                style={[styles.detailJoinBtn, { backgroundColor: '#D97706' }]}
+                                onPress={() => handleJoin(selectedCommunityDetail)}
+                              >
+                                <Ionicons name="mail" size={13} color="#FFFFFF" />
+                                <Text style={styles.detailJoinBtnText}>Solicitar Ingreso</Text>
+                              </TouchableOpacity>
                             ) : (
                               <TouchableOpacity 
                                 style={styles.detailJoinBtn}
@@ -1147,6 +1390,7 @@ export const CommunitiesScreen: React.FC = () => {
                       const isMember = isPrimary || isSecondary || (selectedCommunityDetail.members && selectedCommunityDetail.members.includes(currentUser.id)) || isSuperAdmin;
 
                       if (!isMember) {
+                        const isPending = selectedCommunityDetail.pendingMembers && selectedCommunityDetail.pendingMembers.includes(currentUser.id);
                         return (
                           <View style={styles.notJoinedBanner}>
                             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 4 }}>
@@ -1154,15 +1398,29 @@ export const CommunitiesScreen: React.FC = () => {
                               <Text style={styles.notJoinedBannerTitle}>Solo miembros pueden compartir fotos</Text>
                             </View>
                             <Text style={styles.notJoinedBannerSub}>
-                              Únete a {selectedCommunityDetail.name} para subir fotos de tus perritos y ganar +15 🐾 Huellitas.
+                              {isPending 
+                                ? 'Tu solicitud de ingreso fue enviada y está en revisión por el creador de la comunidad. Una vez aprobada, podrás compartir fotos de tus perritos y ganar +15 🐾 Huellitas.'
+                                : selectedCommunityDetail.accessType === 'approval_required'
+                                ? 'Esta comunidad requiere aprobación previa. Solicita tu ingreso para compartir fotos de tus perritos y ganar +15 🐾 Huellitas.'
+                                : `Únete a ${selectedCommunityDetail.name} para subir fotos de tus perritos y ganar +15 🐾 Huellitas.`
+                              }
                             </Text>
-                            <TouchableOpacity 
-                              style={styles.notJoinedBannerBtn}
-                              onPress={() => handleJoin(selectedCommunityDetail)}
-                            >
-                              <Ionicons name="add-circle" size={14} color="#FFFFFF" />
-                              <Text style={styles.notJoinedBannerBtnText}>Unirme a esta comunidad (+10 🐾)</Text>
-                            </TouchableOpacity>
+                            {isPending ? (
+                              <View style={[styles.joinedBadge, { alignSelf: 'flex-start', backgroundColor: '#FEF3C7', borderColor: '#FDE68A', borderWidth: 1, paddingVertical: 8, paddingHorizontal: 12 }]}>
+                                <Ionicons name="time" size={14} color="#D97706" />
+                                <Text style={[styles.joinedBadgeText, { color: '#B45309' }]}>Solicitud en Revisión</Text>
+                              </View>
+                            ) : (
+                              <TouchableOpacity 
+                                style={[styles.notJoinedBannerBtn, selectedCommunityDetail.accessType === 'approval_required' && { backgroundColor: '#D97706' }]}
+                                onPress={() => handleJoin(selectedCommunityDetail)}
+                              >
+                                <Ionicons name={selectedCommunityDetail.accessType === 'approval_required' ? "mail" : "add-circle"} size={14} color="#FFFFFF" />
+                                <Text style={styles.notJoinedBannerBtnText}>
+                                  {selectedCommunityDetail.accessType === 'approval_required' ? 'Solicitar Ingreso a la Comunidad' : 'Unirme a esta comunidad (+10 🐾)'}
+                                </Text>
+                              </TouchableOpacity>
+                            )}
                           </View>
                         );
                       }
@@ -1534,7 +1792,7 @@ export const CommunitiesScreen: React.FC = () => {
           <View style={[styles.modalCard, { maxHeight: '90%' }]}>
             <View style={styles.modalHeader}>
               <View style={{ flex: 1 }}>
-                <Text style={styles.modalTitle}>👑 Gestión de Administradores</Text>
+                <Text style={styles.modalTitle}>👑 Gestión de Comunidad</Text>
                 <Text style={[styles.modalIntro, { marginBottom: 0 }]}>
                   {selectedAdminComm?.name}
                 </Text>
@@ -1544,11 +1802,168 @@ export const CommunitiesScreen: React.FC = () => {
               </TouchableOpacity>
             </View>
 
-            <Text style={styles.modalIntro}>
-              Como Administrador Principal, tú tienes la titularidad exclusiva y delegas permisos a tus coordinadores para ayudarte a gestionar la comunidad.
-            </Text>
+            <ScrollView style={{ maxHeight: 480 }} showsVerticalScrollIndicator={false}>
+              {/* SECCIÓN 1: CONFIGURACIÓN DE MODELO DE ACCESO */}
+              <View style={styles.adminSectionBox}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+                  <Ionicons name="shield-checkmark" size={16} color="#0284C7" />
+                  <Text style={styles.adminSectionTitle}>Modelo de Acceso a la Manada</Text>
+                </View>
+                <Text style={styles.adminSectionDesc}>
+                  Configura cómo pueden ingresar los nuevos tutores a tu comunidad:
+                </Text>
 
-            <ScrollView style={{ maxHeight: 420 }} showsVerticalScrollIndicator={false}>
+                <View style={styles.accessToggleRow}>
+                  <TouchableOpacity
+                    style={[
+                      styles.accessToggleBtn,
+                      (selectedAdminComm?.accessType || 'open') === 'open' && styles.accessToggleBtnActive
+                    ]}
+                    onPress={() => handleToggleAccessType('open')}
+                  >
+                    <Ionicons 
+                      name="globe-outline" 
+                      size={16} 
+                      color={(selectedAdminComm?.accessType || 'open') === 'open' ? '#059669' : '#64748B'} 
+                    />
+                    <View style={{ marginLeft: 8, flex: 1 }}>
+                      <Text style={[
+                        styles.accessToggleTitle,
+                        (selectedAdminComm?.accessType || 'open') === 'open' && styles.accessToggleTitleActive
+                      ]}>
+                        🌐 Abierta a Todos
+                      </Text>
+                      <Text style={styles.accessToggleSub}>
+                        Cualquier tutor entra con 1 clic
+                      </Text>
+                    </View>
+                    {(selectedAdminComm?.accessType || 'open') === 'open' && (
+                      <Ionicons name="checkmark-circle" size={18} color="#059669" />
+                    )}
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={[
+                      styles.accessToggleBtn,
+                      selectedAdminComm?.accessType === 'approval_required' && styles.accessToggleBtnActiveApproval
+                    ]}
+                    onPress={() => handleToggleAccessType('approval_required')}
+                  >
+                    <Ionicons 
+                      name="lock-closed" 
+                      size={16} 
+                      color={selectedAdminComm?.accessType === 'approval_required' ? '#D97706' : '#64748B'} 
+                    />
+                    <View style={{ marginLeft: 8, flex: 1 }}>
+                      <Text style={[
+                        styles.accessToggleTitle,
+                        selectedAdminComm?.accessType === 'approval_required' && styles.accessToggleTitleActiveApproval
+                      ]}>
+                        🔒 Con Aprobación
+                      </Text>
+                      <Text style={styles.accessToggleSub}>
+                        Tú autorizas a cada aspirante
+                      </Text>
+                    </View>
+                    {selectedAdminComm?.accessType === 'approval_required' && (
+                      <Ionicons name="checkmark-circle" size={18} color="#D97706" />
+                    )}
+                  </TouchableOpacity>
+                </View>
+              </View>
+
+              {/* SECCIÓN 2: SOLICITUDES DE INGRESO PENDIENTES */}
+              <View style={styles.adminSectionBox}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                    <Ionicons name="mail-unread" size={16} color="#D97706" />
+                    <Text style={styles.adminSectionTitle}>
+                      Solicitudes de Ingreso Pendientes ({pendingApplicants.length})
+                    </Text>
+                  </View>
+                  {loadingPending && <ActivityIndicator size="small" color="#D97706" />}
+                </View>
+
+                {loadingPending ? (
+                  <View style={{ paddingVertical: 16, alignItems: 'center' }}>
+                    <ActivityIndicator size="small" color="#0284C7" />
+                    <Text style={{ fontSize: 12, color: '#64748B', marginTop: 6 }}>Buscando aspirantes...</Text>
+                  </View>
+                ) : pendingApplicants.length === 0 ? (
+                  <View style={styles.emptyApplicantBox}>
+                    <Ionicons name="checkmark-circle-outline" size={26} color="#10B981" />
+                    <Text style={styles.emptyApplicantText}>No hay solicitudes pendientes en este momento.</Text>
+                  </View>
+                ) : (
+                  pendingApplicants.map(applicant => {
+                    const isProcessing = actionLoadingUserId === applicant.userId;
+                    return (
+                      <View key={applicant.userId} style={styles.applicantCard}>
+                        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                          <Image 
+                            source={{ uri: applicant.user?.photoURL || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=100' }} 
+                            style={styles.applicantAvatar} 
+                          />
+                          <View style={{ flex: 1, marginLeft: 10 }}>
+                            <Text style={styles.applicantName}>{applicant.user?.displayName || 'Tutor Canino'}</Text>
+                            <Text style={styles.applicantMeta}>
+                              📍 {applicant.user?.location?.comuna || 'Santiago'}, {applicant.user?.location?.region || 'Metropolitana'}
+                            </Text>
+                            <Text style={styles.applicantEmail}>{applicant.user?.email || ''}</Text>
+                          </View>
+                        </View>
+
+                        {/* Perritos del Tutor */}
+                        <View style={styles.applicantDogsRow}>
+                          <Text style={styles.applicantDogsLabel}>🐾 Perrito(s):</Text>
+                          {applicant.dogs.length > 0 ? (
+                            applicant.dogs.map(dog => (
+                              <View key={dog.id} style={styles.applicantDogChip}>
+                                <Text style={styles.applicantDogChipText}>
+                                  🐶 {dog.name} ({dog.breed})
+                                </Text>
+                              </View>
+                            ))
+                          ) : (
+                            <Text style={styles.applicantNoDogsText}>Aún no registra perrito</Text>
+                          )}
+                        </View>
+
+                        {/* Acciones de Validación */}
+                        <View style={styles.applicantActionRow}>
+                          <TouchableOpacity
+                            style={[styles.applicantRejectBtn, isProcessing && { opacity: 0.6 }]}
+                            onPress={() => handleRejectApplicant(applicant.userId)}
+                            disabled={isProcessing}
+                          >
+                            <Ionicons name="close-circle" size={14} color="#DC2626" />
+                            <Text style={styles.applicantRejectBtnText}>Rechazar</Text>
+                          </TouchableOpacity>
+
+                          <TouchableOpacity
+                            style={[styles.applicantApproveBtn, isProcessing && { opacity: 0.6 }]}
+                            onPress={() => handleApproveApplicant(applicant.userId)}
+                            disabled={isProcessing}
+                          >
+                            <Ionicons name="checkmark-circle" size={14} color="#FFFFFF" />
+                            <Text style={styles.applicantApproveBtnText}>Aprobar (+10 🐾)</Text>
+                          </TouchableOpacity>
+                        </View>
+                      </View>
+                    );
+                  })
+                )}
+              </View>
+
+              {/* SECCIÓN 3: COORDINADORES DELEGADOS */}
+              <View style={[styles.adminSectionBox, { marginBottom: 10 }]}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+                  <Ionicons name="people" size={16} color="#B45309" />
+                  <Text style={styles.adminSectionTitle}>Coordinadores Delegados</Text>
+                </View>
+                <Text style={styles.adminSectionDesc}>
+                  Como Administrador Principal, tú tienes la titularidad exclusiva y delegas permisos a tus coordinadores para ayudarte a gestionar la comunidad.
+                </Text>
               <View style={styles.secAdminList}>
                 {secAdminsList.length === 0 ? (
                   <View style={styles.emptyCard}>
@@ -1740,6 +2155,7 @@ export const CommunitiesScreen: React.FC = () => {
                   <Text style={styles.addSecAdminTriggerText}>+ Designar Nuevo Administrador Secundario</Text>
                 </TouchableOpacity>
               )}
+              </View>
             </ScrollView>
 
             <TouchableOpacity 
@@ -3057,6 +3473,257 @@ const styles = StyleSheet.create({
   },
   notJoinedBannerBtnText: {
     fontSize: 13,
+    fontWeight: '700',
+    color: '#FFFFFF',
+  },
+  accessBadgeApproval: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FEF3C7',
+    borderWidth: 1,
+    borderColor: '#FDE68A',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 8,
+    gap: 3,
+  },
+  accessBadgeApprovalText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#B45309',
+  },
+  accessBadgeOpen: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#ECFDF5',
+    borderWidth: 1,
+    borderColor: '#A7F3D0',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 8,
+    gap: 3,
+  },
+  accessBadgeOpenText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#059669',
+  },
+  pendingBadgeCounter: {
+    backgroundColor: '#DC2626',
+    borderRadius: 10,
+    minWidth: 18,
+    height: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 4,
+    marginLeft: 4,
+  },
+  pendingBadgeCounterText: {
+    color: '#FFFFFF',
+    fontSize: 10,
+    fontWeight: '800',
+  },
+  accessTypeSelectorRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 10,
+  },
+  accessTypeCard: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1.5,
+    borderColor: '#E2E8F0',
+    borderRadius: 12,
+    padding: 10,
+  },
+  accessTypeCardActive: {
+    backgroundColor: '#F0F9FF',
+    borderColor: '#0284C7',
+  },
+  accessTypeCardTitle: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#334155',
+  },
+  accessTypeCardTitleActive: {
+    color: '#0284C7',
+  },
+  accessTypeCardSub: {
+    fontSize: 10,
+    color: '#64748B',
+    marginTop: 2,
+    lineHeight: 13,
+  },
+  adminSectionBox: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    padding: 12,
+    marginBottom: 12,
+  },
+  adminSectionTitle: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#0F172A',
+  },
+  adminSectionDesc: {
+    fontSize: 11,
+    color: '#64748B',
+    marginBottom: 10,
+    lineHeight: 15,
+  },
+  accessToggleRow: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  accessToggleBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1.5,
+    borderColor: '#E2E8F0',
+    borderRadius: 10,
+    padding: 10,
+  },
+  accessToggleBtnActive: {
+    backgroundColor: '#ECFDF5',
+    borderColor: '#10B981',
+  },
+  accessToggleBtnActiveApproval: {
+    backgroundColor: '#FFFBEB',
+    borderColor: '#F59E0B',
+  },
+  accessToggleTitle: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#475569',
+  },
+  accessToggleTitleActive: {
+    color: '#047857',
+  },
+  accessToggleTitleActiveApproval: {
+    color: '#B45309',
+  },
+  accessToggleSub: {
+    fontSize: 10,
+    color: '#64748B',
+    marginTop: 1,
+  },
+  emptyApplicantBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F0FDF4',
+    borderWidth: 1,
+    borderColor: '#BBF7D0',
+    borderRadius: 10,
+    padding: 10,
+    gap: 8,
+  },
+  emptyApplicantText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#15803D',
+    flex: 1,
+  },
+  applicantCard: {
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    borderRadius: 12,
+    padding: 10,
+    marginBottom: 8,
+  },
+  applicantAvatar: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#E2E8F0',
+  },
+  applicantName: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#0F172A',
+  },
+  applicantMeta: {
+    fontSize: 11,
+    color: '#64748B',
+    marginTop: 1,
+  },
+  applicantEmail: {
+    fontSize: 10,
+    color: '#94A3B8',
+  },
+  applicantDogsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: 6,
+    marginTop: 8,
+    paddingTop: 6,
+    borderTopWidth: 1,
+    borderTopColor: '#EEF2F6',
+  },
+  applicantDogsLabel: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#475569',
+  },
+  applicantDogChip: {
+    backgroundColor: '#E0F2FE',
+    borderWidth: 1,
+    borderColor: '#BAE6FD',
+    borderRadius: 6,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+  },
+  applicantDogChipText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#0369A1',
+  },
+  applicantNoDogsText: {
+    fontSize: 11,
+    color: '#94A3B8',
+    fontStyle: 'italic',
+  },
+  applicantActionRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginTop: 8,
+  },
+  applicantRejectBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#FEE2E2',
+    borderWidth: 1,
+    borderColor: '#FECACA',
+    paddingVertical: 7,
+    borderRadius: 8,
+    gap: 4,
+  },
+  applicantRejectBtnText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#DC2626',
+  },
+  applicantApproveBtn: {
+    flex: 1.2,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#10B981',
+    paddingVertical: 7,
+    borderRadius: 8,
+    gap: 4,
+  },
+  applicantApproveBtnText: {
+    fontSize: 12,
     fontWeight: '700',
     color: '#FFFFFF',
   },

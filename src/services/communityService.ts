@@ -11,8 +11,9 @@ import {
   increment
 } from 'firebase/firestore';
 import { db } from '../firebase/config';
-import { Community, CommunityRequest, SecondaryAdminPermissions, SecondaryAdminInfo } from '../models/Community';
+import { Community, CommunityRequest, SecondaryAdminPermissions, SecondaryAdminInfo, CommunityAccessType } from '../models/Community';
 import { logAuditAction } from './auditService';
+import { awardPaws } from './gamificationService';
 
 let localCommunities: Community[] = [];
 let localRequests: CommunityRequest[] = [];
@@ -127,6 +128,8 @@ export const approveCommunityRequest = async (
     region: req ? req.region : 'Metropolitana',
     comuna: req ? req.comuna : 'Santiago',
     status: 'active',
+    accessType: req?.accessType || 'open',
+    pendingMembers: [],
     isVerified: true,
     membersCount: 1,
     eventsCount: 0,
@@ -224,6 +227,8 @@ export const getCommunities = async (): Promise<Community[]> => {
           region: data.region || 'Metropolitana',
           comuna: data.comuna || 'Santiago',
           status: (data.status === 'activa' ? 'active' : (data.status || 'active')),
+          accessType: (data.accessType || 'open') as CommunityAccessType,
+          pendingMembers: data.pendingMembers || [],
           isVerified: !!data.isVerified,
           membersCount: data.membersCount || 1,
           approximateMembers: data.approximateMembers || data.membersCount || 1,
@@ -244,16 +249,56 @@ export const getCommunities = async (): Promise<Community[]> => {
   }
 };
 
-export const joinCommunity = async (communityId: string, userId: string): Promise<{ success: boolean; message: string }> => {
+export const joinCommunity = async (
+  communityId: string, 
+  userId: string
+): Promise<{ 
+  success: boolean; 
+  status: 'JOINED' | 'PENDING_APPROVAL' | 'ALREADY_MEMBER' | 'ALREADY_PENDING'; 
+  message: string 
+}> => {
   try {
     const commRef = doc(db, 'communities', communityId);
     const commSnap = await getDoc(commRef);
     if (commSnap.exists()) {
       const data = commSnap.data();
       const currentMembers: string[] = data.members || [];
+      const pending: string[] = data.pendingMembers || [];
+      const accessType: CommunityAccessType = (data.accessType || 'open') as CommunityAccessType;
+
       if (currentMembers.includes(userId) || data.primaryAdminId === userId) {
-        return { success: false, message: `¡Ya eres miembro de la comunidad ${data.name || ''}!` };
+        return { success: false, status: 'ALREADY_MEMBER', message: `¡Ya eres miembro de la comunidad ${data.name || ''}!` };
       }
+
+      // Si requiere aprobación del creador
+      if (accessType === 'approval_required') {
+        if (pending.includes(userId)) {
+          return { success: false, status: 'ALREADY_PENDING', message: `Tu solicitud ya fue enviada y está en revisión por el creador.` };
+        }
+        await updateDoc(commRef, {
+          pendingMembers: arrayUnion(userId),
+          updatedAt: serverTimestamp()
+        });
+        const local = localCommunities.find(c => c.id === communityId);
+        if (local) {
+          if (!local.pendingMembers) local.pendingMembers = [];
+          if (!local.pendingMembers.includes(userId)) local.pendingMembers.push(userId);
+        }
+        await logAuditAction(
+          userId,
+          'COMMUNITY_JOIN_REQUEST',
+          'communities',
+          communityId,
+          `Solicitud de ingreso enviada a comunidad privada: ${data.name}`
+        );
+        return {
+          success: true,
+          status: 'PENDING_APPROVAL',
+          message: `¡Solicitud enviada! El creador de la comunidad revisará tu perfil para autorizar tu ingreso.`
+        };
+      }
+
+      // Acceso Abierto Directo
       const newCount = (data.membersCount || 0) + 1;
       await updateDoc(commRef, {
         membersCount: newCount,
@@ -266,23 +311,159 @@ export const joinCommunity = async (communityId: string, userId: string): Promis
         if (!local.members) local.members = [];
         if (!local.members.includes(userId)) local.members.push(userId);
       }
-      return { success: true, message: `¡Te has unido exitosamente a ${data.name}!` };
+      return { success: true, status: 'JOINED', message: `¡Te has unido exitosamente a ${data.name}!` };
     }
   } catch (err) {
     console.warn('Error actualizando miembros en Firestore:', err);
   }
 
   const comm = localCommunities.find(c => c.id === communityId);
-  if (!comm) return { success: false, message: 'Comunidad no encontrada.' };
+  if (!comm) return { success: false, status: 'ALREADY_MEMBER', message: 'Comunidad no encontrada.' };
 
   if (!comm.members) comm.members = comm.primaryAdminId ? [comm.primaryAdminId] : [];
+  if (!comm.pendingMembers) comm.pendingMembers = [];
+
   if (comm.members.includes(userId) || comm.primaryAdminId === userId) {
-    return { success: false, message: `¡Ya eres miembro de la comunidad ${comm.name}!` };
+    return { success: false, status: 'ALREADY_MEMBER', message: `¡Ya eres miembro de la comunidad ${comm.name}!` };
+  }
+
+  if (comm.accessType === 'approval_required') {
+    if (comm.pendingMembers.includes(userId)) {
+      return { success: false, status: 'ALREADY_PENDING', message: `Tu solicitud ya fue enviada y está en revisión por el creador.` };
+    }
+    comm.pendingMembers.push(userId);
+    return { success: true, status: 'PENDING_APPROVAL', message: `¡Solicitud enviada! El creador revisará tu ingreso.` };
   }
 
   comm.members.push(userId);
   comm.membersCount = (comm.membersCount || 0) + 1;
-  return { success: true, message: '¡Te has unido exitosamente a ' + comm.name + '!' };
+  return { success: true, status: 'JOINED', message: '¡Te has unido exitosamente a ' + comm.name + '!' };
+};
+
+/**
+ * Aprobar aspirante a la comunidad
+ */
+export const approveMemberRequest = async (
+  communityId: string,
+  applicantUserId: string,
+  adminUserId: string
+): Promise<{ success: boolean; message: string }> => {
+  try {
+    const commRef = doc(db, 'communities', communityId);
+    const snap = await getDoc(commRef);
+    if (snap.exists()) {
+      const data = snap.data();
+      const newCount = (data.membersCount || 0) + 1;
+      const pending: string[] = (data.pendingMembers || []).filter((id: string) => id !== applicantUserId);
+
+      await updateDoc(commRef, {
+        membersCount: newCount,
+        members: arrayUnion(applicantUserId),
+        pendingMembers: pending,
+        updatedAt: serverTimestamp()
+      });
+    }
+  } catch (e) {
+    console.warn('Error aprobando miembro en Firestore:', e);
+  }
+
+  const comm = localCommunities.find(c => c.id === communityId);
+  if (comm) {
+    if (!comm.members) comm.members = [];
+    if (!comm.members.includes(applicantUserId)) comm.members.push(applicantUserId);
+    comm.pendingMembers = (comm.pendingMembers || []).filter(id => id !== applicantUserId);
+    comm.membersCount = (comm.membersCount || 0) + 1;
+  }
+
+  // Otorgar Huellitas de bienvenida por unirse a la comunidad (+10 🐾)
+  await awardPaws(applicantUserId, 'community_joined', communityId);
+
+  await logAuditAction(
+    adminUserId,
+    'COMMUNITY_MEMBER_APPROVED',
+    'communities',
+    communityId,
+    `Aspirante ${applicantUserId} aprobado para ingresar a la comunidad`
+  );
+
+  return { success: true, message: '¡Solicitud aprobada! El usuario ahora es miembro oficial.' };
+};
+
+/**
+ * Rechazar solicitud de aspirante
+ */
+export const rejectMemberRequest = async (
+  communityId: string,
+  applicantUserId: string,
+  adminUserId: string
+): Promise<{ success: boolean; message: string }> => {
+  try {
+    const commRef = doc(db, 'communities', communityId);
+    const snap = await getDoc(commRef);
+    if (snap.exists()) {
+      const data = snap.data();
+      const pending: string[] = (data.pendingMembers || []).filter((id: string) => id !== applicantUserId);
+      await updateDoc(commRef, {
+        pendingMembers: pending,
+        updatedAt: serverTimestamp()
+      });
+    }
+  } catch (e) {
+    console.warn('Error rechazando miembro en Firestore:', e);
+  }
+
+  const comm = localCommunities.find(c => c.id === communityId);
+  if (comm) {
+    comm.pendingMembers = (comm.pendingMembers || []).filter(id => id !== applicantUserId);
+  }
+
+  await logAuditAction(
+    adminUserId,
+    'COMMUNITY_MEMBER_REJECTED',
+    'communities',
+    communityId,
+    `Solicitud del usuario ${applicantUserId} rechazada por el administrador`
+  );
+
+  return { success: true, message: 'Solicitud rechazada.' };
+};
+
+/**
+ * Cambiar tipo de acceso de la comunidad (Abierta vs Requiere Aprobación)
+ */
+export const updateCommunityAccessType = async (
+  communityId: string,
+  accessType: CommunityAccessType,
+  adminUserId: string
+): Promise<{ success: boolean; message: string }> => {
+  try {
+    await updateDoc(doc(db, 'communities', communityId), {
+      accessType,
+      updatedAt: serverTimestamp()
+    });
+  } catch (e) {
+    console.warn('Error actualizando accessType en Firestore:', e);
+  }
+
+  const comm = localCommunities.find(c => c.id === communityId);
+  if (comm) {
+    comm.accessType = accessType;
+  }
+
+  await logAuditAction(
+    adminUserId,
+    'COMMUNITY_ACCESS_TYPE_CHANGE',
+    'communities',
+    communityId,
+    `Tipo de acceso configurado a: ${accessType === 'approval_required' ? 'Requiere Aprobación' : 'Abierta a todos'}`
+  );
+
+  return { 
+    success: true, 
+    message: accessType === 'approval_required' 
+      ? 'La comunidad ahora requiere aprobación de nuevos miembros.' 
+      : 'La comunidad ahora es abierta para que cualquiera se una con 1 clic.' 
+  };
 };
 
 export const createOfficialCommunity = async (
@@ -294,6 +475,7 @@ export const createOfficialCommunity = async (
     comuna: string;
     primaryAdminId: string;
     logoUrl?: string;
+    accessType?: CommunityAccessType;
   }
 ): Promise<{ success: boolean; id?: string; message: string }> => {
   const commId = 'comm-' + Date.now();
@@ -308,6 +490,8 @@ export const createOfficialCommunity = async (
     region: communityData.region || 'Metropolitana',
     comuna: communityData.comuna || 'Santiago',
     status: 'active',
+    accessType: communityData.accessType || 'open',
+    pendingMembers: [],
     isVerified: true,
     membersCount: 1,
     approximateMembers: 1,
@@ -335,7 +519,7 @@ export const createOfficialCommunity = async (
     'COMMUNITY_CREATE_OFFICIAL',
     'communities',
     commId,
-    `Comunidad oficial creada directamente: ${newComm.name}`
+    `Comunidad oficial creada directamente: ${newComm.name} (${newComm.accessType})`
   );
 
   return { success: true, id: commId, message: `¡Comunidad "${newComm.name}" creada y publicada oficialmente!` };

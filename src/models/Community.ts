@@ -27,6 +27,8 @@ export interface CommunityMember {
 
 export type CommunityStatus = 'pending' | 'more_info_needed' | 'active' | 'rejected' | 'archived';
 
+export type CommunityAccessType = 'open' | 'approval_required';
+
 export interface Community {
   id: string;
   name: string;
@@ -45,6 +47,8 @@ export interface Community {
   primaryAdminId: string;
   secondaryAdmins?: SecondaryAdminInfo[];
   status: CommunityStatus;
+  accessType?: CommunityAccessType; // 'open' (libre) | 'approval_required' (con aprobación)
+  pendingMembers?: string[]; // IDs de usuarios esperando aprobación
   membersCount?: number;
   joinType?: string;
   members?: string[];
@@ -67,6 +71,7 @@ export interface CommunityRequest {
   region: string;
   comuna: string;
   approximateSize: number;
+  accessType?: CommunityAccessType;
   status: CommunityRequestStatus;
   reviewedBy?: string;
   feedbackNote?: string;
