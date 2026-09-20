@@ -1,68 +1,92 @@
 # Changelog — Juntitas 🐾
 
-Todos los cambios notables en este proyecto serán documentados en este archivo.
-El formato sigue las directrices de [Keep a Changelog](https://keepachangelog.com/es-ES/1.0.0/) y respeta el versionado semántico.
+Todos los cambios notables en este proyecto serán documentados en este archivo.  
+El formato está basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.0.0/) y este proyecto se adhiere a [Semantic Versioning](https://semver.org/lang/es/).
+
+---
+
+## [Unreleased] - [1.1.0]
+
+### 📱 Próximo Hito: Empaquetado APK & Distribución Móvil
+- **Generación de binario APK para Android**: Compilación autónoma mediante Expo Application Services (EAS) o build local.
+- **Iconos Adaptativos Android**: Optimización de `adaptive-icon.png` con soporte para temas oscuros y claros del sistema.
+- **Pantalla Splash Nativa**: Configuración de `splash.image` y tiempos de transición a nivel de sistema operativo.
+- **Sincronización Offline Mejorada**: Almacenamiento en caché de juntas y pasaporte cuando no haya conexión móvil.
+
+---
+
+## [1.0.0] - 2026-09-19
+
+### 🚀 Lanzamiento Oficial v1.0.0 (Producción)
+
+#### ✨ Pantalla de Carga Inicial (Splash & Persistencia de Sesión)
+- **Splash Screen animado (`SplashScreen.tsx`)**: Insignia central con latido de patita (`🐾`), barra de progreso circular y mensajes rotativos de estado (*"Verificando tu sesión..."*, *"Cargando la manada..."*).
+- **Temporizador de tolerancia de sesión**: Espera garantizada de ~2.5 segundos que permite a `Firebase Auth` y a `AsyncStorage` resolver credenciales previas sin parpadeos indeseados.
+- **Persistencia local automática (`@juntitas_active_user`)**: Las sesiones activas de tutores y administradores se conservan localmente y se limpian estrictamente al cerrar sesión.
+
+#### 🔔 Sistema de Notificaciones en Tiempo Real
+- **Notificaciones automáticas ante cancelación o eliminación de juntas**: Al cancelar o eliminar un evento desde la app o el CRM, todos los tutores con asistencia confirmada reciben una alerta prioritaria en su dispositivo con el motivo obligatorio de la cancelación.
+- **Avisos de nuevas convocatorias**: Notificación a todos los miembros de una comunidad cuando un administrador publica una nueva junta oficial.
+- **Campana con contador dinámico y modal interactivo (`NotificationsModal.tsx`)**: Acceso directo desde el encabezado de inicio con marcado de lectura individual o masivo.
+
+#### 🗺️ Geolocalización & Selector de Mapa Gratuito
+- **Integración con OpenStreetMap (`OsmMapPickerModal.tsx`)**: Selector visual interactivo para ubicar el punto exacto de encuentro sin requerir costos de APIs de mapas de terceros.
+- **Coordenadas y deep linking a Google Maps**: Enlace directo para navegación asistida en carretera respetando la privacidad del usuario (sin GPS en segundo plano).
+
+#### 🛡️ Reglas Estrictas de Publicación & Administración Delegada
+- **Restricción estricta de convocatoria**: Solo el Administrador Principal y los Administradores Secundarios autorizados de una comunidad específica pueden publicar juntas en su nombre. Se bloquea la creación indebida en comunidades ajenas.
+- **Gestión interactiva de Administradores Secundarios**: El Administrador Principal puede promover miembros, delegar permisos de moderación o revocar accesos según la regla R-0802.
+
+#### 👥 Conteo Segregado de Asistentes en 3 Pestañas
+- **Desglose independiente**:
+  - **Tutores**: Asistentes humanos registrados.
+  - **Perritos**: Mascotas específicas que acudirán al evento.
+  - **Comercios**: Stands y tiendas que participarán en la junta.
+- **Selección de perritos para asistencia**: Tutores con más de un perro pueden indicar con precisión cuáles de sus mascotas asistirán y modificar su elección sin duplicar la asistencia.
+
+#### 📸 Álbumes Comunitarios & Moderación Legal
+- **Selector de perrito en fotografías**: Al subir una foto comunitaria, el usuario asocia la imagen directamente a uno de sus perritos registrados.
+- **Sistema de Likes Únicos**: Previene el spam permitiendo exactamente un like por usuario por foto.
+- **Herramientas de moderación comunitaria**:
+  - Actualización de logotipo y foto de portada comunitaria por parte de administradores.
+  - Bloqueo legal de imágenes con causal obligatoria por infracción a normas o leyes de bienestar animal.
+  - Edición de pies de foto y reactivación de fotos suspendidas.
+
+#### 💼 CRM de Super Administrador (Francisco Juillet)
+- **Gestión de Juntas en el CRM**: Visualización de eventos, cancelación con motivo auditado y eliminación controlada.
+- **Restablecimiento de Contraseñas por Correo**: Capacidad de disparar correos de recuperación de contraseña de Firebase Auth tanto desde el CRM como desde la pantalla de login.
+- **Logs de Auditoría Inmutables (`auditLogs`)**: Trazabilidad detallada de cada acción administrativa.
 
 ---
 
 ## [0.1.2-beta] - 2026-09-16
 
-### 🐾 Gamificación & Huella Sorpresa (Cooldown y Rarezas)
-- **Cooldown estricto de 5 horas**: Implementada ventana de espera de 5 horas (`COOLDOWN_HOURS = 5`) con almacenamiento de marca de tiempo (`lastSurprisePawClaim`). Impide clics ilimitados y acumulación indiscriminada de huellitas.
-- **Reloj de cuenta regresiva en tiempo real**: Contador visual interactivo (`XXh XXm XXs`) tanto en la tarjeta de inicio (`HomeScreen.tsx`) como en el modal (`SurprisePawModal.tsx`).
-- **Probabilidades escasas y equilibradas**:
-  - *Legendaria* (1%): +500 a 1000 huellitas.
-  - *Dorada* (6%): +150 a 250 huellitas.
-  - *Especial* (18%): +40 a 70 huellitas.
-  - *Normal* (75%): +10 a 25 huellitas.
-- **Animación de Serpentinas / Confeti**: Efecto festivo de serpentinas animadas al desbloquear rarezas Dorada y Legendaria.
+### 🐾 Gamificación & Huella Sorpresa
+- **Cooldown estricto de 5 horas**: Ventana de espera de 5 horas (`COOLDOWN_HOURS = 5`) con marca de tiempo persistente para evitar acumulación indiscriminada.
+- **Cuenta regresiva en tiempo real**: Contador interactivo (`XXh XXm XXs`) en la tarjeta de inicio y en el modal de ruleta.
+- **Probabilidades balanceadas**: Legendaria (1%), Dorada (6%), Especial (18%), Normal (75%).
+- **Lluvia de confeti**: Animación festiva al obtener recompensas Doradas y Legendarias.
 
-### 🛡️ Super Administrador "Francisco Juillet" & Herramientas de Base de Datos
-- **Identidad formal del Super Admin**: Perfil renombrado oficialmente a **Francisco Juillet (SuperAdmin)** con correo `admin@juntitas.app`.
-- **Acceso exclusivo y seguro**: Autenticación estricta con credenciales `admin` / `admin` sin puertas traseras públicas.
-- **Botón "Vaciar Toda la App" (Factory Reset)**: Permite reiniciar la base de datos completa con confirmación de seguridad, eliminando todos los datos de prueba y preservando únicamente la cuenta del Super Admin Francisco Juillet.
-- **Botón "Poblar 10 Usuarios & 4 Tiendas" (Seed)**: Herramienta en el CRM que genera:
-  - 10 usuarios realistas chilenos.
-  - 1 a 3 perros aleatorios por usuario con razas y edades diversas.
-  - 4 tiendas caninas verificadas con sus respectivos productos y descuentos.
-  - 3 comunidades principales con Administradores Principales asignados.
-  - 2 juntas caninas programadas con ubicación.
+### 🛡️ Panel CRM Supremo
+- Perfil oficial configurado para Francisco Juillet (`admin@juntitas.app`).
+- Herramientas de testing: "Vaciar Toda la App" (Factory Reset) y "Poblar 10 Usuarios & 4 Tiendas" (Seeder).
 
 ---
 
 ## [0.1.1-beta] - 2026-09-16
 
-
-### 🔒 Seguridad & Autenticación Estricta
-- **Eliminación de atajos de admin no autorizados**: Se retiraron todos los botones públicos de "Acceso Admin" y "Entrar Super Admin" de las pantallas de Onboarding, Registro y Cuenta Pendiente.
-- **Autenticación formal de Administrador**: El acceso al Super Admin y su CRM ahora es estrictamente a través del formulario de Login ingresando las credenciales autorizadas (`admin` / `admin`).
-- **Eliminación de la barra flotante de roles**: Se eliminó la barra `RoleSwitcherBar` de `App.tsx`. Ahora la aplicación es 100% nativa y cada usuario opera única y exclusivamente con los permisos legítimos de su cuenta.
-- **Cierre de sesión nativo**: Añadido botón de "Cerrar Sesión" en el Perfil de Usuario.
+### 🔒 Seguridad & Autenticación
+- Eliminación de accesos rápidos no autorizados en pantallas públicas.
+- Acceso exclusivo al CRM mediante credenciales legítimas.
+- Cierre de sesión nativo en el perfil de usuario.
 
 ---
 
 ## [0.1.0-beta] - 2026-09-16
 
-### ✨ Añadido
-- **Onboarding e Introducción**: Carrusel interactivo de bienvenida (`OnboardingScreen.tsx`) que explica los 4 pilares: Comunidades, Juntas, Pasaporte Canino y Huellitas.
-- **Registro con Filtro de Acceso**:
-  - Modalidad de registro con selector de 3 perfiles: Tutor Canino (+ perro), Líder Comunitario (+ grupo canino) y Tienda Canina (+ comercio).
-  - Filtro de seguridad: los perfiles de líderes de comunidad y tiendas se registran con estado `PENDIENTE_APROBACION`.
-- **Pantalla de Cuenta en Revisión / Suspendida**: Vista protegida (`AccountPendingScreen.tsx`) para cuentas pendientes de aprobación o suspendidas con atajo para pruebas de Super Admin.
-- **Base de Datos Firebase Firestore (`juntitas-47e8d`)**:
-  - Conexión directa a las colecciones `users`, `dogs`, `communities`, `communityRequests`, `events`, `eventAttendances`, `businesses` y `auditLogs`.
-  - Eliminación de datos mock estáticos en memoria para permitir el llenado orgánico en tiempo real.
-- **Panel CRM Completo para Super Administrador (`SuperAdminPanelScreen.tsx`)**:
-  - CRM de Usuarios: Listado en vivo, buscador, filtros por estado (`PENDIENTE`, `ACTIVO`, `SUSPENDIDO`).
-  - Botón *Habilitar / Aprobar*: activación instantánea de cuentas.
-  - Botón *Suspender*: bloqueo con motivo obligatorio de suspensión según la regla R-2401.
-  - Botón *Cambiar Rol*: asignación de roles entre Super Admin, Principal, Secundario, Comercio o Tutor.
-  - Botón *Editar Datos*: actualización de información visible del usuario.
-  - CRM de Comunidades: aprobación de solicitudes comunitarias y asignación automática de Administrador Principal (R-0601, R-0602).
-  - CRM de Auditoría: trazabilidad de todas las acciones del CRM (`auditLogs`).
-- **Pasaporte Perruno Digital**: Carnet coleccionable de perritos con medallas, antigüedad y conteos derivados.
-- **Juntas & Encuentros**:
-  - Deep link a Google Maps sin GPS obligatorio.
-  - Conteo transparente separado de tutores vs perritos inscritos (Regla R-1203).
-  - Permiso exclusivo de publicación para administradores (`EVENT_CREATE`).
-- **Gamificación**: Huellitas con libro mayor inmutable, ruleta sorpresa diaria y canje de cupones QR únicos de 6 caracteres.
+### ✨ Lanzamiento Inicial
+- Flujo de Onboarding con 4 diapositivas.
+- Registro con filtro de seguridad para Tutores, Líderes y Comercios.
+- Pasaporte perruno digital coleccionable.
+- Integración a Cloud Firestore (`juntitas-47e8d`).
+- Primeras juntas caninas oficiales con conteo separado y deep link a mapas.
