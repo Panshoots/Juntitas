@@ -429,6 +429,57 @@ export const rejectMemberRequest = async (
 };
 
 /**
+ * Expulsar a un miembro/tutor de la comunidad por incumplimiento de normas o convivencia
+ */
+export const removeMemberFromCommunity = async (
+  communityId: string,
+  memberUserId: string,
+  adminUserId: string,
+  reason: string = 'Incumplimiento de las normas de la comunidad'
+): Promise<{ success: boolean; message: string }> => {
+  const comm = localCommunities.find(c => c.id === communityId);
+  if (comm && comm.primaryAdminId === memberUserId) {
+    return { success: false, message: 'No puedes expulsar al Administrador Principal (Titular) de la comunidad.' };
+  }
+
+  try {
+    const commRef = doc(db, 'communities', communityId);
+    const snap = await getDoc(commRef);
+    if (snap.exists()) {
+      const data = snap.data();
+      if (data.primaryAdminId === memberUserId) {
+        return { success: false, message: 'No puedes expulsar al Administrador Principal de la comunidad.' };
+      }
+      const updatedMembers = (data.members || []).filter((id: string) => id !== memberUserId);
+      const newCount = Math.max(1, (data.membersCount || 1) - 1);
+
+      await updateDoc(commRef, {
+        members: updatedMembers,
+        membersCount: newCount,
+        updatedAt: serverTimestamp()
+      });
+    }
+  } catch (err) {
+    console.warn('Error eliminando miembro en Firestore:', err);
+  }
+
+  if (comm) {
+    comm.members = (comm.members || []).filter(id => id !== memberUserId);
+    comm.membersCount = Math.max(1, (comm.membersCount || 1) - 1);
+  }
+
+  await logAuditAction(
+    adminUserId,
+    'COMMUNITY_MEMBER_EXPELLED',
+    'communities',
+    communityId,
+    `Tutor ${memberUserId} expulsado de la comunidad. Motivo: ${reason}`
+  );
+
+  return { success: true, message: 'El tutor ha sido expulsado exitosamente de la comunidad.' };
+};
+
+/**
  * Cambiar tipo de acceso de la comunidad (Abierta vs Requiere Aprobación)
  */
 export const updateCommunityAccessType = async (

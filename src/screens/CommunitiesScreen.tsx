@@ -28,7 +28,8 @@ import {
   updateCommunityPhotosAndInfo,
   approveMemberRequest,
   rejectMemberRequest,
-  updateCommunityAccessType
+  updateCommunityAccessType,
+  removeMemberFromCommunity
 } from '../services/communityService';
 import { AppUser } from '../models/User';
 import { getUsersFromDb } from '../services/userService';
@@ -108,6 +109,27 @@ export const CommunitiesScreen: React.FC = () => {
   }[]>([]);
   const [loadingPending, setLoadingPending] = useState(false);
   const [actionLoadingUserId, setActionLoadingUserId] = useState<string | null>(null);
+
+  // Gestión y Expulsión de Miembros de la Manada
+  const [adminModalTab, setAdminModalTab] = useState<'access_and_requests' | 'members' | 'coordinators'>('access_and_requests');
+  const [activeMembersList, setActiveMembersList] = useState<{
+    userId: string;
+    user?: AppUser;
+    dogs: Dog[];
+    isPrimaryAdmin: boolean;
+    isSecondaryAdmin: boolean;
+  }[]>([]);
+  const [loadingActiveMembers, setLoadingActiveMembers] = useState(false);
+  const [showExpelModal, setShowExpelModal] = useState(false);
+  const [memberToExpel, setMemberToExpel] = useState<{
+    userId: string;
+    user?: AppUser;
+    dogs: Dog[];
+    isPrimaryAdmin: boolean;
+    isSecondaryAdmin: boolean;
+  } | null>(null);
+  const [expelReason, setExpelReason] = useState('Incumplimiento de normas de convivencia');
+  const [expelling, setExpelling] = useState(false);
 
   // Modal de Detalle de Comunidad (Perritos Asistentes y Fotos)
   const [selectedCommunityDetail, setSelectedCommunityDetail] = useState<Community | null>(null);
@@ -441,14 +463,98 @@ export const CommunitiesScreen: React.FC = () => {
     }
   };
 
+  const loadActiveMembers = async (comm: Community) => {
+    const memberIds = comm.members || (comm.primaryAdminId ? [comm.primaryAdminId] : []);
+    if (memberIds.length === 0) {
+      setActiveMembersList([]);
+      return;
+    }
+    setLoadingActiveMembers(true);
+    try {
+      const [allUsers, allDogs] = await Promise.all([
+        getUsersFromDb(),
+        getAllDogsFromDb()
+      ]);
+      const list = memberIds.map(userId => {
+        const u = allUsers.find(user => user.id === userId);
+        const userDogs = allDogs.filter(dog => dog.ownerId === userId);
+        const isPrimary = comm.primaryAdminId === userId;
+        const isSecondary = (comm.secondaryAdmins || []).some(sa => sa.userId === userId);
+        return {
+          userId,
+          user: u,
+          dogs: userDogs,
+          isPrimaryAdmin: isPrimary,
+          isSecondaryAdmin: isSecondary
+        };
+      });
+      setActiveMembersList(list);
+    } catch (err) {
+      console.warn('Error cargando miembros activos:', err);
+    } finally {
+      setLoadingActiveMembers(false);
+    }
+  };
+
+  const handleOpenExpelModal = (member: {
+    userId: string;
+    user?: AppUser;
+    dogs: Dog[];
+    isPrimaryAdmin: boolean;
+    isSecondaryAdmin: boolean;
+  }) => {
+    setMemberToExpel(member);
+    setExpelReason('Incumplimiento de normas de convivencia');
+    setShowExpelModal(true);
+  };
+
+  const handleConfirmExpelMember = async () => {
+    if (!selectedAdminComm || !memberToExpel) return;
+    setExpelling(true);
+    const res = await removeMemberFromCommunity(
+      selectedAdminComm.id,
+      memberToExpel.userId,
+      currentUser.id,
+      expelReason
+    );
+    setExpelling(false);
+    showToast(res.message, res.success ? 'warning' : 'error');
+
+    if (res.success) {
+      const updatedMembers = (selectedAdminComm.members || []).filter(id => id !== memberToExpel.userId);
+      const newCount = Math.max(1, (selectedAdminComm.membersCount || 1) - 1);
+      const updatedComm: Community = {
+        ...selectedAdminComm,
+        members: updatedMembers,
+        membersCount: newCount
+      };
+      setSelectedAdminComm(updatedComm);
+      setActiveMembersList(prev => prev.filter(m => m.userId !== memberToExpel.userId));
+      setShowExpelModal(false);
+      setMemberToExpel(null);
+      await loadCommunities();
+      if (selectedCommunityDetail && selectedCommunityDetail.id === selectedAdminComm.id) {
+        setSelectedCommunityDetail(prev => prev ? ({
+          ...prev,
+          members: updatedMembers,
+          membersCount: newCount
+        }) : null);
+      }
+    }
+  };
+
   const handleOpenAdminModal = async (comm: Community) => {
     setSelectedAdminComm(comm);
+    setAdminModalTab('access_and_requests');
     const list = getSecondaryAdminsForCommunity(comm);
     setSecAdminsList(list);
     setEditingAdminId(null);
     setShowAddSecAdminForm(false);
     setShowAdminModal(true);
-    await loadPendingApplicants(comm);
+    await Promise.all([
+      loadPendingApplicants(comm),
+      loadActiveMembers(comm)
+    ]);
   };
 
   const handleApproveApplicant = async (applicantUserId: string) => {
@@ -469,6 +575,7 @@ export const CommunitiesScreen: React.FC = () => {
       setSelectedAdminComm(updatedComm);
       setPendingApplicants(prev => prev.filter(p => p.userId !== applicantUserId));
       loadCommunities();
+      loadActiveMembers(updatedComm);
     }
   };
 
@@ -1802,7 +1909,72 @@ export const CommunitiesScreen: React.FC = () => {
               </TouchableOpacity>
             </View>
 
+            {/* Sub-tabs de Gestión de Comunidad */}
+            <View style={styles.adminSubTabRow}>
+              <TouchableOpacity
+                style={[
+                  styles.adminSubTabBtn,
+                  adminModalTab === 'access_and_requests' && styles.adminSubTabBtnActive
+                ]}
+                onPress={() => setAdminModalTab('access_and_requests')}
+              >
+                <Ionicons 
+                  name="shield-checkmark" 
+                  size={13} 
+                  color={adminModalTab === 'access_and_requests' ? '#0284C7' : '#64748B'} 
+                />
+                <Text style={[
+                  styles.adminSubTabBtnText,
+                  adminModalTab === 'access_and_requests' && styles.adminSubTabBtnTextActive
+                ]}>
+                  Acceso {pendingApplicants.length > 0 ? `(${pendingApplicants.length})` : ''}
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[
+                  styles.adminSubTabBtn,
+                  adminModalTab === 'members' && styles.adminSubTabBtnActive
+                ]}
+                onPress={() => setAdminModalTab('members')}
+              >
+                <Ionicons 
+                  name="people" 
+                  size={13} 
+                  color={adminModalTab === 'members' ? '#0284C7' : '#64748B'} 
+                />
+                <Text style={[
+                  styles.adminSubTabBtnText,
+                  adminModalTab === 'members' && styles.adminSubTabBtnTextActive
+                ]}>
+                  Miembros ({activeMembersList.length})
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[
+                  styles.adminSubTabBtn,
+                  adminModalTab === 'coordinators' && styles.adminSubTabBtnActive
+                ]}
+                onPress={() => setAdminModalTab('coordinators')}
+              >
+                <Ionicons 
+                  name="ribbon" 
+                  size={13} 
+                  color={adminModalTab === 'coordinators' ? '#0284C7' : '#64748B'} 
+                />
+                <Text style={[
+                  styles.adminSubTabBtnText,
+                  adminModalTab === 'coordinators' && styles.adminSubTabBtnTextActive
+                ]}>
+                  Coordinadores ({secAdminsList.length})
+                </Text>
+              </TouchableOpacity>
+            </View>
+
             <ScrollView style={{ maxHeight: 480 }} showsVerticalScrollIndicator={false}>
+              {adminModalTab === 'access_and_requests' && (
+                <>
               {/* SECCIÓN 1: CONFIGURACIÓN DE MODELO DE ACCESO */}
               <View style={styles.adminSectionBox}>
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 4 }}>
@@ -1954,8 +2126,103 @@ export const CommunitiesScreen: React.FC = () => {
                   })
                 )}
               </View>
+              </>
+              )}
 
-              {/* SECCIÓN 3: COORDINADORES DELEGADOS */}
+              {/* PESTAÑA 2: MIEMBROS OFICIALES Y EXPULSIÓN */}
+              {adminModalTab === 'members' && (
+                <View style={styles.adminSectionBox}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                      <Ionicons name="people" size={16} color="#0284C7" />
+                      <Text style={styles.adminSectionTitle}>
+                        Miembros Oficiales de la Manada ({activeMembersList.length})
+                      </Text>
+                    </View>
+                    {loadingActiveMembers && <ActivityIndicator size="small" color="#0284C7" />}
+                  </View>
+
+                  <Text style={styles.adminSectionDesc}>
+                    Como administrador, moderas la convivencia de la comunidad. Si un tutor incumple las reglas o incurre en conductas inapropiadas, puedes expulsarlo de la manada.
+                  </Text>
+
+                  {loadingActiveMembers ? (
+                    <View style={{ paddingVertical: 20, alignItems: 'center' }}>
+                      <ActivityIndicator size="small" color="#0284C7" />
+                      <Text style={{ fontSize: 12, color: '#64748B', marginTop: 6 }}>Cargando tutores miembros...</Text>
+                    </View>
+                  ) : activeMembersList.length === 0 ? (
+                    <View style={styles.emptyCard}>
+                      <Ionicons name="people-outline" size={32} color="#94A3B8" />
+                      <Text style={styles.emptyText}>No hay miembros registrados aún.</Text>
+                    </View>
+                  ) : (
+                    activeMembersList.map(member => (
+                      <View key={member.userId} style={styles.memberCardItem}>
+                        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                          <Image 
+                            source={{ uri: member.user?.photoURL || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=100' }} 
+                            style={styles.applicantAvatar} 
+                          />
+                          <View style={{ flex: 1, marginLeft: 10 }}>
+                            <View style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 6 }}>
+                              <Text style={styles.applicantName}>{member.user?.displayName || 'Tutor Canino'}</Text>
+                              {member.isPrimaryAdmin && (
+                                <View style={styles.titularBadge}>
+                                  <Ionicons name="ribbon" size={10} color="#B45309" />
+                                  <Text style={styles.titularBadgeText}>Creador / Titular</Text>
+                                </View>
+                              )}
+                              {member.isSecondaryAdmin && (
+                                <View style={styles.coordBadge}>
+                                  <Ionicons name="shield-half" size={10} color="#0369A1" />
+                                  <Text style={styles.coordBadgeText}>Coordinador</Text>
+                                </View>
+                              )}
+                            </View>
+                            <Text style={styles.applicantMeta}>
+                              📍 {member.user?.location?.comuna || 'Santiago'}, {member.user?.location?.region || 'Metropolitana'}
+                            </Text>
+                            <Text style={styles.applicantEmail}>{member.user?.email || ''}</Text>
+                          </View>
+                        </View>
+
+                        {/* Perritos del Tutor */}
+                        <View style={styles.applicantDogsRow}>
+                          <Text style={styles.applicantDogsLabel}>🐾 Perrito(s):</Text>
+                          {member.dogs.length > 0 ? (
+                            member.dogs.map(dog => (
+                              <View key={dog.id} style={styles.applicantDogChip}>
+                                <Text style={styles.applicantDogChipText}>
+                                  🐶 {dog.name} ({dog.breed})
+                                </Text>
+                              </View>
+                            ))
+                          ) : (
+                            <Text style={styles.applicantNoDogsText}>Sin perritos registrados</Text>
+                          )}
+                        </View>
+
+                        {/* Botón de Expulsión (solo para tutores miembros, no para el creador titular) */}
+                        {!member.isPrimaryAdmin && (
+                          <View style={{ marginTop: 10, borderTopWidth: 1, borderTopColor: '#F1F5F9', paddingTop: 8 }}>
+                            <TouchableOpacity
+                              style={styles.expelMemberActionBtn}
+                              onPress={() => handleOpenExpelModal(member)}
+                            >
+                              <Ionicons name="ban" size={13} color="#DC2626" />
+                              <Text style={styles.expelMemberActionBtnText}>Expulsar de la Comunidad</Text>
+                            </TouchableOpacity>
+                          </View>
+                        )}
+                      </View>
+                    ))
+                  )}
+                </View>
+              )}
+
+              {/* PESTAÑA 3: COORDINADORES DELEGADOS */}
+              {adminModalTab === 'coordinators' && (
               <View style={[styles.adminSectionBox, { marginBottom: 10 }]}>
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 4 }}>
                   <Ionicons name="people" size={16} color="#B45309" />
@@ -2156,6 +2423,7 @@ export const CommunitiesScreen: React.FC = () => {
                 </TouchableOpacity>
               )}
               </View>
+              )}
             </ScrollView>
 
             <TouchableOpacity 
@@ -2164,6 +2432,103 @@ export const CommunitiesScreen: React.FC = () => {
             >
               <Text style={styles.closeAdminModalText}>Cerrar Panel de Gestión</Text>
             </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Modal de Confirmación de Expulsión de Tutor */}
+      <Modal visible={showExpelModal} transparent animationType="fade">
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalCard, { maxWidth: 460 }]}>
+            <View style={styles.modalHeader}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                <Ionicons name="warning" size={22} color="#DC2626" />
+                <Text style={[styles.modalTitle, { color: '#DC2626' }]}>Expulsar de la Manada</Text>
+              </View>
+              <TouchableOpacity onPress={() => setShowExpelModal(false)}>
+                <Ionicons name="close" size={24} color="#64748B" />
+              </TouchableOpacity>
+            </View>
+
+            {memberToExpel && (
+              <View style={styles.expelTargetCard}>
+                <Image 
+                  source={{ uri: memberToExpel.user?.photoURL || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=100' }} 
+                  style={styles.expelTargetAvatar} 
+                />
+                <View style={{ flex: 1, marginLeft: 10 }}>
+                  <Text style={styles.expelTargetName}>{memberToExpel.user?.displayName || 'Tutor Canino'}</Text>
+                  <Text style={styles.expelTargetMeta}>
+                    📍 {memberToExpel.user?.location?.comuna || 'Santiago'} • {memberToExpel.dogs.length} perrito(s)
+                  </Text>
+                </View>
+              </View>
+            )}
+
+            <View style={styles.expelWarningBox}>
+              <Ionicons name="alert-circle" size={16} color="#B91C1C" />
+              <Text style={styles.expelWarningText}>
+                Esta acción removerá la membresía del tutor en "{selectedAdminComm?.name}". El usuario perderá acceso a publicar fotos y a las juntas exclusivas de la comunidad.
+              </Text>
+            </View>
+
+            <Text style={styles.inputSectionLabel}>Selecciona el motivo de la expulsión:</Text>
+            <View style={styles.expelReasonsList}>
+              {[
+                'Incumplimiento reiterado de normas de convivencia',
+                'Conducta inapropiada o agresiva de tutor/mascota',
+                'Publicación de fotos inadecuadas o prohibidas',
+                'Spam o comercio no autorizado en la comunidad',
+              ].map(reason => (
+                <TouchableOpacity
+                  key={reason}
+                  style={[
+                    styles.expelReasonChip,
+                    expelReason === reason && styles.expelReasonChipActive
+                  ]}
+                  onPress={() => setExpelReason(reason)}
+                >
+                  <Ionicons 
+                    name={expelReason === reason ? "radio-button-on" : "radio-button-off"} 
+                    size={15} 
+                    color={expelReason === reason ? "#DC2626" : "#94A3B8"} 
+                  />
+                  <Text style={[
+                    styles.expelReasonChipText,
+                    expelReason === reason && styles.expelReasonChipTextActive
+                  ]}>
+                    {reason}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            <TextInput
+              placeholder="O escribe un motivo detallado..."
+              value={expelReason}
+              onChangeText={setExpelReason}
+              style={[styles.modalInput, { marginTop: 6 }]}
+            />
+
+            <View style={{ flexDirection: 'row', gap: 8, marginTop: 12 }}>
+              <TouchableOpacity
+                style={[styles.secAdminActionBtn, { flex: 1 }]}
+                onPress={() => setShowExpelModal(false)}
+                disabled={expelling}
+              >
+                <Text style={styles.secAdminActionBtnText}>Cancelar</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.btnDanger, { flex: 1.3, paddingVertical: 10 }, expelling && { opacity: 0.6 }]}
+                onPress={handleConfirmExpelMember}
+                disabled={expelling}
+              >
+                <Text style={styles.btnDangerText}>
+                  {expelling ? 'Expulsando...' : 'Confirmar Expulsión'}
+                </Text>
+              </TouchableOpacity>
+            </View>
           </View>
         </View>
       </Modal>
@@ -3726,5 +4091,164 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '700',
     color: '#FFFFFF',
+  },
+  adminSubTabRow: {
+    flexDirection: 'row',
+    backgroundColor: '#F1F5F9',
+    borderRadius: 12,
+    padding: 4,
+    marginBottom: 12,
+    gap: 4,
+  },
+  adminSubTabBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 8,
+    borderRadius: 8,
+    gap: 4,
+  },
+  adminSubTabBtnActive: {
+    backgroundColor: '#FFFFFF',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.08,
+    shadowRadius: 2,
+    elevation: 2,
+  },
+  adminSubTabBtnText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#64748B',
+  },
+  adminSubTabBtnTextActive: {
+    color: '#0284C7',
+  },
+  memberCardItem: {
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: 8,
+  },
+  titularBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FEF3C7',
+    borderWidth: 1,
+    borderColor: '#FDE68A',
+    borderRadius: 6,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    gap: 3,
+  },
+  titularBadgeText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#B45309',
+  },
+  coordBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#E0F2FE',
+    borderWidth: 1,
+    borderColor: '#BAE6FD',
+    borderRadius: 6,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    gap: 3,
+  },
+  coordBadgeText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#0369A1',
+  },
+  expelMemberActionBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#FEF2F2',
+    borderWidth: 1,
+    borderColor: '#FECACA',
+    borderRadius: 8,
+    paddingVertical: 6,
+    gap: 5,
+  },
+  expelMemberActionBtnText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#DC2626',
+  },
+  expelTargetCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F8FAFC',
+    borderRadius: 12,
+    padding: 10,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    marginBottom: 10,
+  },
+  expelTargetAvatar: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: '#E2E8F0',
+  },
+  expelTargetName: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#0F172A',
+  },
+  expelTargetMeta: {
+    fontSize: 11,
+    color: '#64748B',
+    marginTop: 2,
+  },
+  expelWarningBox: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    backgroundColor: '#FEF2F2',
+    borderWidth: 1,
+    borderColor: '#FCA5A5',
+    borderRadius: 10,
+    padding: 10,
+    marginBottom: 12,
+    gap: 8,
+  },
+  expelWarningText: {
+    flex: 1,
+    fontSize: 11,
+    color: '#991B1B',
+    lineHeight: 16,
+  },
+  expelReasonsList: {
+    gap: 6,
+    marginBottom: 8,
+  },
+  expelReasonChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    gap: 6,
+  },
+  expelReasonChipActive: {
+    backgroundColor: '#FEF2F2',
+    borderColor: '#FCA5A5',
+  },
+  expelReasonChipText: {
+    fontSize: 12,
+    color: '#475569',
+  },
+  expelReasonChipTextActive: {
+    color: '#B91C1C',
+    fontWeight: '600',
   },
 });
