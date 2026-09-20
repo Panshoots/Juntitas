@@ -4,6 +4,7 @@ import {
   getDocs, 
   getDoc, 
   setDoc, 
+  updateDoc,
   deleteDoc, 
   query, 
   where, 
@@ -51,6 +52,7 @@ export const getDogsByOwner = async (ownerId: string): Promise<Dog[]> => {
           description: data.description || 'Perrito sociable y juguetón.',
           personalityTraits: data.personalityTraits || ['sociable', 'juguetón'],
           photoUrls: data.photoUrls || [DEFAULT_DOG_PHOTOS[0]],
+          instagramHandle: data.instagramHandle || data.passport?.instagramHandle || undefined,
           passport: data.passport || {
             attendedEventsCount: 0,
             badges: ['primer_registro'],
@@ -85,6 +87,7 @@ export const createDogForOwner = async (
     photoUrl?: string;
     description?: string;
     birthDate?: Date;
+    instagramHandle?: string;
   }
 ): Promise<{ success: boolean; dog?: Dog; message: string }> => {
   // 1. Validar límite del Plan Estándar (máximo 2 perros)
@@ -96,6 +99,12 @@ export const createDogForOwner = async (
     };
   }
 
+  const formattedInstagram = dogData.instagramHandle?.trim()
+    ? (dogData.instagramHandle.trim().startsWith('@') 
+        ? dogData.instagramHandle.trim() 
+        : `@${dogData.instagramHandle.trim()}`)
+    : undefined;
+
   const dogId = `dog-${ownerId}-${Date.now()}`;
   const initialPassport: DogPassport = {
     attendedEventsCount: 0,
@@ -103,7 +112,8 @@ export const createDogForOwner = async (
     highlightPhotos: dogData.photoUrl ? [dogData.photoUrl] : [],
     seniorityDate: new Date(),
     communitiesCount: 0,
-    honorTitle: 'Nuevo Cachorro'
+    honorTitle: 'Nuevo Cachorro',
+    instagramHandle: formattedInstagram
   };
 
   const newDog: Dog = {
@@ -118,6 +128,7 @@ export const createDogForOwner = async (
     description: dogData.description || 'Perrito sociable y alegre.',
     personalityTraits: ['sociable', 'juguetón'],
     photoUrls: [dogData.photoUrl || DEFAULT_DOG_PHOTOS[existingDogs.length % DEFAULT_DOG_PHOTOS.length]],
+    instagramHandle: formattedInstagram,
     passport: initialPassport,
     createdAt: new Date(),
     updatedAt: new Date()
@@ -169,6 +180,28 @@ export const deleteDogFromDb = async (dogId: string, ownerId: string): Promise<{
 };
 
 /**
+ * Actualizar datos de un perrito
+ */
+export const updateDogInDb = async (dogId: string, updates: Partial<Dog>): Promise<{ success: boolean; message: string }> => {
+  try {
+    const dogDocRef = doc(db, 'dogs', dogId);
+    await updateDoc(dogDocRef, cleanUndefined({
+      ...updates,
+      updatedAt: serverTimestamp()
+    }));
+  } catch (err) {
+    console.warn('Actualizando perrito localmente:', err);
+  }
+
+  const existing = localDogs.find(d => d.id === dogId);
+  if (existing) {
+    Object.assign(existing, updates);
+  }
+
+  return { success: true, message: 'Datos del perrito actualizados correctamente.' };
+};
+
+/**
  * Obtener todos los perritos de todas las comunidades
  */
 export const getAllDogsFromDb = async (): Promise<Dog[]> => {
@@ -190,6 +223,7 @@ export const getAllDogsFromDb = async (): Promise<Dog[]> => {
           description: data.description || '',
           personalityTraits: data.personalityTraits || [],
           photoUrls: data.photoUrls || [DEFAULT_DOG_PHOTOS[0]],
+          instagramHandle: data.instagramHandle || data.passport?.instagramHandle || undefined,
           passport: data.passport || {
             attendedEventsCount: 0,
             badges: ['primer_registro'],

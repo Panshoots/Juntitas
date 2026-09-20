@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   View, 
   Text, 
@@ -6,19 +6,25 @@ import {
   Image, 
   ScrollView, 
   TouchableOpacity,
-  RefreshControl 
+  RefreshControl,
+  Linking,
+  Alert,
+  Platform
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Dog } from '../models/Dog';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import { useAuth } from '../context/AuthContext';
+import { getUserByIdFromDb } from '../services/userService';
 
 export const DogPassportScreen: React.FC<{ route?: { params?: { dog?: Dog } } }> = ({ route }) => {
   const navigation = useNavigation<any>();
   const insets = useSafeAreaInsets();
-  const { currentDogs } = useAuth();
+  const { currentDogs, currentUser } = useAuth();
   const [refreshing, setRefreshing] = useState(false);
+  const [ownerData, setOwnerData] = useState<any>(null);
+  const [copiedSuccess, setCopiedSuccess] = useState(false);
 
   const handleRefresh = () => {
     setRefreshing(true);
@@ -41,6 +47,45 @@ export const DogPassportScreen: React.FC<{ route?: { params?: { dog?: Dog } } }>
       honorTitle: 'Perrito Aventurero',
       badges: []
     }
+  };
+
+  useEffect(() => {
+    if (dog?.ownerId) {
+      getUserByIdFromDb(dog.ownerId).then(u => {
+        if (u) setOwnerData(u);
+      }).catch(e => console.warn('Error cargando tutor del perrito:', e));
+    }
+  }, [dog?.ownerId]);
+
+  const rawInstagram = dog.instagramHandle || dog.passport?.instagramHandle || (dog.ownerId === currentUser?.id ? currentUser?.contact?.instagram : ownerData?.contact?.instagram);
+  const isCustomInstagram = !!rawInstagram;
+  const displayHandle = rawInstagram 
+    ? (rawInstagram.startsWith('@') ? rawInstagram : `@${rawInstagram}`)
+    : `@${dog.name.toLowerCase().replace(/[^a-z0-9_]/gi, '')}.juntitas`;
+
+  const handleOpenInstagram = async () => {
+    const cleanHandle = displayHandle.replace(/^@/, '').trim();
+    const instagramUrl = `https://instagram.com/${cleanHandle}`;
+    try {
+      if (Platform.OS === 'web' && typeof window !== 'undefined') {
+        window.open(instagramUrl, '_blank');
+      } else {
+        await Linking.openURL(instagramUrl);
+      }
+    } catch (e) {
+      Alert.alert('Instagram', `Visita el perfil de ${dog.name} en Instagram:\n${instagramUrl}`);
+    }
+  };
+
+  const handleCopyHandle = async () => {
+    try {
+      if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(displayHandle);
+      }
+    } catch (e) {}
+    setCopiedSuccess(true);
+    setTimeout(() => setCopiedSuccess(false), 2500);
+    Alert.alert('¡Handle Copiado!', `${displayHandle} ha sido copiado al portapapeles.`);
   };
 
   const calculateAge = (date: Date | any) => {
@@ -119,6 +164,63 @@ export const DogPassportScreen: React.FC<{ route?: { params?: { dog?: Dog } } }>
             <Text style={styles.statNumber}>{dog.passport?.communitiesCount || 1}</Text>
             <Text style={styles.statLabel}>Comunidades</Text>
           </View>
+        </View>
+      </View>
+
+      {/* TARJETA DE INSTAGRAM OFICIAL DEL PERRITO */}
+      <View style={styles.instagramCard}>
+        <View style={styles.instagramHeaderRow}>
+          <View style={styles.instagramBadge}>
+            <Ionicons name="logo-instagram" size={18} color="#BE185D" />
+            <Text style={styles.instagramBadgeText}>Instagram Canino</Text>
+          </View>
+          <View style={styles.verifiedTag}>
+            <Ionicons name="sparkles" size={13} color="#0284C7" />
+            <Text style={styles.verifiedTagText}>
+              {isCustomInstagram ? 'Cuenta Vinculada' : 'Perfil Comunitario'}
+            </Text>
+          </View>
+        </View>
+
+        <View style={styles.instagramBodyRow}>
+          <View style={styles.instagramIconContainer}>
+            <Ionicons name="logo-instagram" size={30} color="#FFFFFF" />
+          </View>
+          <View style={{ flex: 1, marginLeft: 14 }}>
+            <Text style={styles.instagramHandleText}>{displayHandle}</Text>
+            <Text style={styles.instagramDescText}>
+              {isCustomInstagram 
+                ? `¡Sigue las aventuras de ${dog.name}, sus fotos en juntitas y momentos especiales!` 
+                : `Sigue el perfil comunitario de ${dog.name} para enterarte de sus próximas juntitas y paseos.`}
+            </Text>
+          </View>
+        </View>
+
+        <View style={styles.instagramActionRow}>
+          <TouchableOpacity 
+            style={styles.instagramFollowBtn}
+            onPress={handleOpenInstagram}
+            activeOpacity={0.85}
+          >
+            <Ionicons name="logo-instagram" size={18} color="#FFFFFF" style={{ marginRight: 8 }} />
+            <Text style={styles.instagramFollowBtnText}>Seguir en Instagram</Text>
+            <Ionicons name="arrow-forward" size={16} color="#FFFFFF" style={{ marginLeft: 6 }} />
+          </TouchableOpacity>
+
+          <TouchableOpacity 
+            style={[styles.instagramCopyBtn, copiedSuccess && { backgroundColor: '#D1FAE5', borderColor: '#10B981' }]}
+            onPress={handleCopyHandle}
+            activeOpacity={0.7}
+          >
+            <Ionicons 
+              name={copiedSuccess ? "checkmark" : "copy-outline"} 
+              size={18} 
+              color={copiedSuccess ? "#059669" : "#475569"} 
+            />
+            <Text style={[styles.instagramCopyBtnText, copiedSuccess && { color: '#059669' }]}>
+              {copiedSuccess ? '¡Copiado!' : 'Copiar'}
+            </Text>
+          </TouchableOpacity>
         </View>
       </View>
 
@@ -342,5 +444,126 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#475569',
     lineHeight: 22,
+  },
+  // ESTILOS INSTAGRAM CARD
+  instagramCard: {
+    marginHorizontal: 16,
+    marginBottom: 20,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 20,
+    padding: 16,
+    borderWidth: 1.5,
+    borderColor: '#FBCFE8',
+    shadowColor: '#E1306C',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.08,
+    shadowRadius: 10,
+    elevation: 3,
+  },
+  instagramHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 12,
+  },
+  instagramBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: '#FDF2F8',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 12,
+  },
+  instagramBadgeText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#BE185D',
+  },
+  verifiedTag: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#F0F9FF',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#BAE6FD',
+  },
+  verifiedTagText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#0284C7',
+  },
+  instagramBodyRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 14,
+  },
+  instagramIconContainer: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: '#E1306C',
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#E1306C',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  instagramHandleText: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: '#0F172A',
+  },
+  instagramDescText: {
+    fontSize: 12,
+    color: '#64748B',
+    marginTop: 2,
+    lineHeight: 16,
+  },
+  instagramActionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  instagramFollowBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#E1306C',
+    paddingVertical: 12,
+    borderRadius: 14,
+    shadowColor: '#E1306C',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.25,
+    shadowRadius: 6,
+    elevation: 3,
+  },
+  instagramFollowBtnText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#FFFFFF',
+  },
+  instagramCopyBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 11,
+    paddingHorizontal: 14,
+    borderRadius: 14,
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    gap: 6,
+  },
+  instagramCopyBtnText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#475569',
   },
 });

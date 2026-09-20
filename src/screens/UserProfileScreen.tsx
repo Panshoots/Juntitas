@@ -169,6 +169,7 @@ export const UserProfileScreen: React.FC = () => {
   const [newDogBreed, setNewDogBreed] = useState('');
   const [newDogSize, setNewDogSize] = useState<'toy' | 'pequeño' | 'mediano' | 'grande' | 'gigante'>('mediano');
   const [newDogGender, setNewDogGender] = useState<'macho' | 'hembra'>('macho');
+  const [newDogInstagram, setNewDogInstagram] = useState('');
   const [selectedPhotoIndex, setSelectedPhotoIndex] = useState(0);
   const [customDogPhoto, setCustomDogPhoto] = useState<string | null>(null);
   const [savingDog, setSavingDog] = useState(false);
@@ -286,6 +287,7 @@ export const UserProfileScreen: React.FC = () => {
       breed: newDogBreed.trim(),
       size: newDogSize,
       gender: newDogGender,
+      instagramHandle: newDogInstagram.trim() || undefined,
       photoUrl: photoToSave
     });
     setSavingDog(false);
@@ -295,6 +297,7 @@ export const UserProfileScreen: React.FC = () => {
       setShowAddDogModal(false);
       setNewDogName('');
       setNewDogBreed('');
+      setNewDogInstagram('');
       setCustomDogPhoto(null);
     }
   };
@@ -707,97 +710,108 @@ export const UserProfileScreen: React.FC = () => {
               Crea su Pasaporte Canino Oficial. Podrás registrar un máximo de 2 perritos en el Plan Estándar.
             </Text>
 
-            <Text style={styles.modalInputLabel}>Nombre del perrito:</Text>
-            <TextInput
-              placeholder="ej: Firulais, Max, Luna"
-              value={newDogName}
-              onChangeText={setNewDogName}
-              style={styles.modalInput}
-            />
+            <ScrollView showsVerticalScrollIndicator={false} style={{ maxHeight: 440 }}>
+              <Text style={styles.modalInputLabel}>Nombre del perrito: *</Text>
+              <TextInput
+                placeholder="ej: Firulais, Max, Luna"
+                value={newDogName}
+                onChangeText={setNewDogName}
+                style={styles.modalInput}
+              />
 
-            <Text style={styles.modalInputLabel}>Raza (Estandarizada en BD):</Text>
-            <TouchableOpacity 
-              style={styles.breedSelectorBtn}
-              onPress={() => setShowBreedPickerModal(true)}
-            >
-              <Ionicons name="search" size={18} color="#0284C7" style={{ marginRight: 8 }} />
-              <View style={{ flex: 1 }}>
-                <Text style={newDogBreed ? styles.breedSelectorTextSelected : styles.breedSelectorTextPlaceholder} numberOfLines={1}>
-                  {newDogBreed ? `${newDogBreed}` : 'Buscar o seleccionar del catálogo...'}
-                </Text>
-              </View>
-              <Ionicons name="chevron-forward" size={18} color="#94A3B8" />
-            </TouchableOpacity>
-            <Text style={styles.breedAutoNotice}>💡 Al elegir una raza se sugiere automáticamente su tamaño típico.</Text>
+              <Text style={styles.modalInputLabel}>Instagram de tu perrito (opcional):</Text>
+              <TextInput
+                placeholder="ej: @luna.golden o cuenta de la mascota"
+                value={newDogInstagram}
+                onChangeText={setNewDogInstagram}
+                style={styles.modalInput}
+                autoCapitalize="none"
+              />
 
-            <Text style={styles.modalInputLabel}>Género:</Text>
-            <View style={styles.choiceRow}>
-              {(['macho', 'hembra'] as const).map(g => (
-                <TouchableOpacity
-                  key={g}
-                  style={[styles.choiceBtn, newDogGender === g && styles.choiceBtnActive]}
-                  onPress={() => setNewDogGender(g)}
-                >
-                  <Text style={[styles.choiceBtnText, newDogGender === g && styles.choiceBtnTextActive]}>
-                    {g === 'macho' ? '♂ Macho' : '♀ Hembra'}
+              <Text style={styles.modalInputLabel}>Raza (Estandarizada en BD): *</Text>
+              <TouchableOpacity 
+                style={styles.breedSelectorBtn}
+                onPress={() => setShowBreedPickerModal(true)}
+              >
+                <Ionicons name="search" size={18} color="#0284C7" style={{ marginRight: 8 }} />
+                <View style={{ flex: 1 }}>
+                  <Text style={newDogBreed ? styles.breedSelectorTextSelected : styles.breedSelectorTextPlaceholder} numberOfLines={1}>
+                    {newDogBreed ? `${newDogBreed}` : 'Buscar o seleccionar del catálogo...'}
                   </Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-
-            <Text style={styles.modalInputLabel}>Tamaño:</Text>
-            <View style={styles.choiceRow}>
-              {(['toy', 'pequeño', 'mediano', 'grande', 'gigante'] as const).map(s => (
-                <TouchableOpacity
-                  key={s}
-                  style={[styles.choiceBtn, newDogSize === s && styles.choiceBtnActive]}
-                  onPress={() => setNewDogSize(s)}
-                >
-                  <Text style={[styles.choiceBtnText, newDogSize === s && styles.choiceBtnTextActive]}>
-                    {s.toUpperCase()}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-
-            <Text style={styles.modalInputLabel}>Foto de perfil del perrito:</Text>
-            <View style={styles.photoActionRow}>
-              <TouchableOpacity style={styles.photoActionButton} onPress={handleTakeDogPhoto}>
-                <Ionicons name="camera" size={18} color="#0284C7" />
-                <Text style={styles.photoActionText}>Tomar Foto</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={styles.photoActionButton} onPress={handlePickDogPhotoGallery}>
-                <Ionicons name="images" size={18} color="#0284C7" />
-                <Text style={styles.photoActionText}>De Galería</Text>
-              </TouchableOpacity>
-            </View>
-
-            {customDogPhoto ? (
-              <View style={styles.customPhotoPreviewCard}>
-                <Image source={{ uri: customDogPhoto }} style={styles.customPhotoThumb} />
-                <View style={{ flex: 1, marginLeft: 12 }}>
-                  <Text style={styles.customPhotoSuccessText}>✓ Foto seleccionada con éxito</Text>
-                  <TouchableOpacity onPress={() => setCustomDogPhoto(null)} style={{ marginTop: 4 }}>
-                    <Text style={styles.removePhotoText}>Cambiar / Usar plantilla</Text>
-                  </TouchableOpacity>
                 </View>
+                <Ionicons name="chevron-forward" size={18} color="#94A3B8" />
+              </TouchableOpacity>
+              <Text style={styles.breedAutoNotice}>💡 Al elegir una raza se sugiere automáticamente su tamaño típico.</Text>
+
+              <Text style={styles.modalInputLabel}>Género:</Text>
+              <View style={styles.choiceRow}>
+                {(['macho', 'hembra'] as const).map(g => (
+                  <TouchableOpacity
+                    key={g}
+                    style={[styles.choiceBtn, newDogGender === g && styles.choiceBtnActive]}
+                    onPress={() => setNewDogGender(g)}
+                  >
+                    <Text style={[styles.choiceBtnText, newDogGender === g && styles.choiceBtnTextActive]}>
+                      {g === 'macho' ? '♂ Macho' : '♀ Hembra'}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
               </View>
-            ) : (
-              <View>
-                <Text style={styles.avatarChoiceLabel}>O elige una plantilla ilustrada:</Text>
-                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.photoPickerRow}>
-                  {DEFAULT_DOG_PHOTOS.map((url, idx) => (
-                    <TouchableOpacity 
-                      key={idx}
-                      onPress={() => setSelectedPhotoIndex(idx)}
-                      style={[styles.photoOption, selectedPhotoIndex === idx && styles.photoOptionActive]}
-                    >
-                      <Image source={{ uri: url }} style={styles.photoThumb} />
+
+              <Text style={styles.modalInputLabel}>Tamaño:</Text>
+              <View style={styles.choiceRow}>
+                {(['toy', 'pequeño', 'mediano', 'grande', 'gigante'] as const).map(s => (
+                  <TouchableOpacity
+                    key={s}
+                    style={[styles.choiceBtn, newDogSize === s && styles.choiceBtnActive]}
+                    onPress={() => setNewDogSize(s)}
+                  >
+                    <Text style={[styles.choiceBtnText, newDogSize === s && styles.choiceBtnTextActive]}>
+                      {s.toUpperCase()}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+
+              <Text style={styles.modalInputLabel}>Foto de perfil del perrito:</Text>
+              <View style={styles.photoActionRow}>
+                <TouchableOpacity style={styles.photoActionButton} onPress={handleTakeDogPhoto}>
+                  <Ionicons name="camera" size={18} color="#0284C7" />
+                  <Text style={styles.photoActionText}>Tomar Foto</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.photoActionButton} onPress={handlePickDogPhotoGallery}>
+                  <Ionicons name="images" size={18} color="#0284C7" />
+                  <Text style={styles.photoActionText}>De Galería</Text>
+                </TouchableOpacity>
+              </View>
+
+              {customDogPhoto ? (
+                <View style={styles.customPhotoPreviewCard}>
+                  <Image source={{ uri: customDogPhoto }} style={styles.customPhotoThumb} />
+                  <View style={{ flex: 1, marginLeft: 12 }}>
+                    <Text style={styles.customPhotoSuccessText}>✓ Foto seleccionada con éxito</Text>
+                    <TouchableOpacity onPress={() => setCustomDogPhoto(null)} style={{ marginTop: 4 }}>
+                      <Text style={styles.removePhotoText}>Cambiar / Usar plantilla</Text>
                     </TouchableOpacity>
-                  ))}
-                </ScrollView>
-              </View>
-            )}
+                  </View>
+                </View>
+              ) : (
+                <View>
+                  <Text style={styles.avatarChoiceLabel}>O elige una plantilla ilustrada:</Text>
+                  <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.photoPickerRow}>
+                    {DEFAULT_DOG_PHOTOS.map((url, idx) => (
+                      <TouchableOpacity 
+                        key={idx}
+                        onPress={() => setSelectedPhotoIndex(idx)}
+                        style={[styles.photoOption, selectedPhotoIndex === idx && styles.photoOptionActive]}
+                      >
+                        <Image source={{ uri: url }} style={styles.photoThumb} />
+                      </TouchableOpacity>
+                    ))}
+                  </ScrollView>
+                </View>
+              )}
+            </ScrollView>
 
             <TouchableOpacity 
               style={[styles.saveDogBtn, savingDog && { opacity: 0.6 }]}

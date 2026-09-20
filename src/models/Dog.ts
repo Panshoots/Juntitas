@@ -9,6 +9,7 @@ export interface DogPassport {
   communitiesCount: number;
   digitalFrameId?: string; // Marco digital equipado
   honorTitle?: string; // Título honorífico desbloqueado (e.g. 'Veterano del Parque')
+  instagramHandle?: string; // Cuenta de Instagram (@nombre.perrito)
 }
 
 export interface Dog {
@@ -23,6 +24,7 @@ export interface Dog {
   description?: string;
   personalityTraits?: string[]; // Ej: ['sociable', 'juguetón', 'tranquilo', 'enérgico']
   photoUrls: string[];
+  instagramHandle?: string; // Cuenta de Instagram de la mascota (@perrito)
   passport: DogPassport;
   createdAt: any;
   updatedAt?: any;
