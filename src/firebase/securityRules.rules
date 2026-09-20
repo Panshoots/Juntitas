@@ -96,5 +96,13 @@ service cloud.firestore {
       allow read: if isSuperAdmin();
       allow write: if false;
     }
+
+    // Notificaciones
+    match /notifications/{notifId} {
+      allow read: if isAuthenticated() && (resource.data.userId == request.auth.uid || isSuperAdmin());
+      allow create: if isAuthenticated();
+      allow update: if isAuthenticated() && (resource.data.userId == request.auth.uid || isSuperAdmin());
+      allow delete: if isAuthenticated() && (resource.data.userId == request.auth.uid || isSuperAdmin());
+    }
   }
 }

@@ -40,6 +40,10 @@ export const NotificationsModal: React.FC<NotificationsModalProps> = ({
         return <View style={[styles.iconBadge, { backgroundColor: '#DCFCE7' }]}><Ionicons name="calendar" size={20} color="#15803D" /></View>;
       case 'community_expelled':
         return <View style={[styles.iconBadge, { backgroundColor: '#FEE2E2' }]}><Ionicons name="ban" size={20} color="#DC2626" /></View>;
+      case 'community_join_request':
+        return <View style={[styles.iconBadge, { backgroundColor: '#FEF3C7' }]}><Ionicons name="person-add" size={20} color="#D97706" /></View>;
+      case 'community_request':
+        return <View style={[styles.iconBadge, { backgroundColor: '#EDE9FE' }]}><Ionicons name="shield-checkmark" size={20} color="#7C3AED" /></View>;
       case 'community':
         return <View style={[styles.iconBadge, { backgroundColor: '#E0F2FE' }]}><Ionicons name="paw" size={20} color="#0284C7" /></View>;
       default:

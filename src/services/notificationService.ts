@@ -17,6 +17,16 @@ import { getCommunities } from './communityService';
 
 let localNotifications: AppNotification[] = [];
 
+const sanitizeForFirestore = (obj: Record<string, any>): Record<string, any> => {
+  const clean: Record<string, any> = {};
+  Object.keys(obj).forEach(key => {
+    if (obj[key] !== undefined) {
+      clean[key] = obj[key];
+    }
+  });
+  return clean;
+};
+
 /**
  * Enviar una notificación a un usuario específico
  */
@@ -52,10 +62,11 @@ export const sendNotificationToUser = async (
   };
 
   try {
-    const docRef = await addDoc(collection(db, 'notifications'), {
+    const payload = sanitizeForFirestore({
       ...newNotif,
       createdAt: serverTimestamp()
     });
+    const docRef = await addDoc(collection(db, 'notifications'), payload);
     newNotif.id = docRef.id;
   } catch (err) {
     console.warn('Guardando notificación en memoria local:', err);
@@ -176,6 +187,73 @@ export const notifyMemberOfRejection = async (
     type: 'community',
     communityId,
     communityName
+  });
+};
+
+/**
+ * Notificar al Administrador de una comunidad que un tutor ha solicitado unirse
+ */
+export const notifyAdminOfJoinRequest = async (
+  adminUserId: string,
+  communityId: string,
+  communityName: string,
+  applicantName: string,
+  applicantUserId: string
+): Promise<void> => {
+  await sendNotificationToUser(adminUserId, {
+    title: `🐾 Solicitud de ingreso: ${communityName}`,
+    message: `${applicantName} ha solicitado unirse a "${communityName}". Revisa su perfil y autoriza su acceso en Gestión de Comunidad.`,
+    type: 'community_join_request',
+    communityId,
+    communityName,
+    metadata: {
+      action: 'join_request',
+      applicantUserId,
+      communityId
+    }
+  });
+};
+
+/**
+ * Notificar al Super Administrador que se ha solicitado validar una nueva comunidad
+ */
+export const notifySuperAdminOfCommunityRequest = async (
+  requestId: string,
+  communityName: string,
+  applicantName: string,
+  applicantEmail?: string
+): Promise<void> => {
+  // Enviar al Super Administrador Supremo
+  await sendNotificationToUser('zjnYSghe7oMOd3FPCnMFfpE2Yrb2', {
+    title: `🏛️ Solicitud de Comunidad: ${communityName}`,
+    message: `${applicantName} (${applicantEmail || 'Tutor'}) ha enviado una solicitud para fundar la comunidad "${communityName}". Revisa los antecedentes en el CRM.`,
+    type: 'community_request',
+    metadata: {
+      action: 'community_request',
+      requestId,
+      communityName
+    }
+  });
+};
+
+/**
+ * Notificar al Super Administrador cuando un nuevo usuario se registra solicitando rol de Administrador
+ */
+export const notifySuperAdminOfNewAdminRegistration = async (
+  userId: string,
+  displayName: string,
+  email: string,
+  requestedCommunityName?: string
+): Promise<void> => {
+  await sendNotificationToUser('zjnYSghe7oMOd3FPCnMFfpE2Yrb2', {
+    title: `🛡️ Nuevo Administrador por validar`,
+    message: `${displayName} (${email}) se ha registrado como Administrador de Comunidad solicitando "${requestedCommunityName || 'Comunidad'}". Revisa y valida su cuenta en el CRM.`,
+    type: 'community_request',
+    metadata: {
+      action: 'admin_registration',
+      userId,
+      requestedCommunityName
+    }
   });
 };
 

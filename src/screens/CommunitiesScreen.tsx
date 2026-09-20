@@ -17,6 +17,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Community, SecondaryAdminInfo, SecondaryAdminPermissions, CommunityAccessType } from '../models/Community';
 import { 
   getCommunities, 
+  getCommunityById,
   joinCommunity, 
   submitCommunityRequest, 
   createOfficialCommunity,
@@ -164,6 +165,14 @@ export const CommunitiesScreen: React.FC = () => {
     getChileRegions().then(list => {
       if (list && list.length > 0) setRegionsList(list);
     }).catch(err => console.warn('Error cargando regiones:', err));
+
+    const pollTimer = setInterval(() => {
+      getCommunities().then(data => {
+        if (data) setCommunities(data);
+      }).catch(() => {});
+    }, 3500);
+
+    return () => clearInterval(pollTimer);
   }, []);
 
   const loadInitialData = async () => {
@@ -355,7 +364,7 @@ export const CommunitiesScreen: React.FC = () => {
       showToast(`Tu solicitud para ${community.name} ya fue enviada y está en revisión por el creador.`, 'info');
       return;
     }
-    const res = await joinCommunity(community.id, currentUser.id);
+    const res = await joinCommunity(community.id, currentUser.id, currentUser.displayName || 'Un tutor');
     showToast(res.message, res.success ? 'success' : 'error');
     if (res.success) {
       if (res.status === 'JOINED') {
@@ -436,7 +445,8 @@ export const CommunitiesScreen: React.FC = () => {
   };
 
   const loadPendingApplicants = async (comm: Community) => {
-    if (!comm.pendingMembers || comm.pendingMembers.length === 0) {
+    const fresh = await getCommunityById(comm.id) || comm;
+    if (!fresh.pendingMembers || fresh.pendingMembers.length === 0) {
       setPendingApplicants([]);
       return;
     }
@@ -446,7 +456,7 @@ export const CommunitiesScreen: React.FC = () => {
         getUsersFromDb(),
         getAllDogsFromDb()
       ]);
-      const list = (comm.pendingMembers || []).map(userId => {
+      const list = (fresh.pendingMembers || []).map(userId => {
         const u = allUsers.find(user => user.id === userId);
         const userDogs = allDogs.filter(dog => dog.ownerId === userId);
         return {
@@ -544,16 +554,17 @@ export const CommunitiesScreen: React.FC = () => {
   };
 
   const handleOpenAdminModal = async (comm: Community) => {
-    setSelectedAdminComm(comm);
+    const freshComm = await getCommunityById(comm.id) || comm;
+    setSelectedAdminComm(freshComm);
     setAdminModalTab('access_and_requests');
-    const list = getSecondaryAdminsForCommunity(comm);
+    const list = getSecondaryAdminsForCommunity(freshComm);
     setSecAdminsList(list);
     setEditingAdminId(null);
     setShowAddSecAdminForm(false);
     setShowAdminModal(true);
     await Promise.all([
-      loadPendingApplicants(comm),
-      loadActiveMembers(comm)
+      loadPendingApplicants(freshComm),
+      loadActiveMembers(freshComm)
     ]);
   };
 

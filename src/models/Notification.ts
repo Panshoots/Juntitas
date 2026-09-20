@@ -3,6 +3,8 @@ export type NotificationType =
   | 'event_created' 
   | 'event_deleted' 
   | 'community' 
+  | 'community_join_request'
+  | 'community_request'
   | 'community_expelled'
   | 'system';
 

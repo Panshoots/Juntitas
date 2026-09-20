@@ -17,6 +17,7 @@ import { Dog } from '../models/Dog';
 import { SecondaryAdminPermissions } from '../models/Community';
 import { createUserInDb, getUsersFromDb } from '../services/userService';
 import { getDogsByOwner, createDogForOwner } from '../services/dogService';
+import { notifySuperAdminOfNewAdminRegistration } from '../services/notificationService';
 
 export type SessionState = 'loading' | 'onboarding' | 'auth' | 'pending_approval' | 'authenticated';
 
@@ -403,6 +404,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     if (newUser.status === 'PENDIENTE_APROBACION') {
       setSessionState('pending_approval');
+      await notifySuperAdminOfNewAdminRegistration(
+        newUser.id,
+        newUser.displayName,
+        newUser.email,
+        newUser.requestedCommunityName
+      );
       return { 
         success: true, 
         message: '¡Registro exitoso en Firebase! Tu cuenta está en revisión oficial por el Super Admin según el filtro.' 

@@ -14,7 +14,14 @@ import { db } from '../firebase/config';
 import { Community, CommunityRequest, SecondaryAdminPermissions, SecondaryAdminInfo, CommunityAccessType } from '../models/Community';
 import { logAuditAction } from './auditService';
 import { awardPaws } from './gamificationService';
-import { notifyMemberOfExpulsion, notifyMemberOfApproval, notifyMemberOfRejection } from './notificationService';
+import { 
+  notifyMemberOfExpulsion, 
+  notifyMemberOfApproval, 
+  notifyMemberOfRejection,
+  notifyAdminOfJoinRequest,
+  notifySuperAdminOfCommunityRequest,
+  sendNotificationToUser
+} from './notificationService';
 
 let localCommunities: Community[] = [];
 let localRequests: CommunityRequest[] = [];
@@ -22,6 +29,13 @@ let localRequests: CommunityRequest[] = [];
 export const submitCommunityRequest = async (
   requestData: Omit<CommunityRequest, 'id' | 'status' | 'createdAt'>
 ): Promise<{ success: boolean; id?: string; message: string }> => {
+  const cleanRequestData: any = {};
+  Object.keys(requestData).forEach(key => {
+    if ((requestData as any)[key] !== undefined) {
+      cleanRequestData[key] = (requestData as any)[key];
+    }
+  });
+
   const req: CommunityRequest = {
     ...requestData,
     id: 'req-' + Date.now(),
@@ -31,7 +45,7 @@ export const submitCommunityRequest = async (
 
   try {
     const docRef = await addDoc(collection(db, 'communityRequests'), {
-      ...requestData,
+      ...cleanRequestData,
       status: 'pending',
       createdAt: serverTimestamp()
     });
@@ -48,6 +62,21 @@ export const submitCommunityRequest = async (
     req.id,
     `Solicitud para fundar la comunidad: ${requestData.communityName}`
   );
+
+  // 1. Notificar al Super Administrador para revisión oficial en el CRM
+  await notifySuperAdminOfCommunityRequest(
+    req.id,
+    requestData.communityName,
+    requestData.applicantName || 'Tutor',
+    requestData.applicantEmail
+  );
+
+  // 2. Notificar al solicitante que su trámite ingresó exitosamente
+  await sendNotificationToUser(requestData.applicantId, {
+    title: `⏳ Solicitud de Fundación Recibida`,
+    message: `Tu solicitud para crear la comunidad "${requestData.communityName}" fue recibida y está en proceso de revisión por el equipo de moderación.`,
+    type: 'community'
+  });
 
   return { success: true, id: req.id, message: '¡Solicitud enviada con éxito! Será validada pronto para que tu comunidad esté disponible.' };
 };
@@ -250,9 +279,49 @@ export const getCommunities = async (): Promise<Community[]> => {
   }
 };
 
+export const getCommunityById = async (communityId: string): Promise<Community | null> => {
+  try {
+    const snap = await getDoc(doc(db, 'communities', communityId));
+    if (snap.exists()) {
+      const data = snap.data();
+      const comm: Community = {
+        id: snap.id,
+        name: data.name || '',
+        slug: data.slug || '',
+        description: data.description || '',
+        logoUrl: data.logoUrl || 'https://images.unsplash.com/photo-1548199973-03cce0bbc87b?w=300',
+        coverPhotoUrl: data.coverPhotoUrl || 'https://images.unsplash.com/photo-1601758228041-f3b2795255f1?w=800',
+        instagramHandle: data.instagramHandle || '',
+        region: data.region || 'Metropolitana',
+        comuna: data.comuna || 'Santiago',
+        status: (data.status === 'activa' ? 'active' : (data.status || 'active')),
+        accessType: (data.accessType || 'open') as CommunityAccessType,
+        pendingMembers: data.pendingMembers || [],
+        isVerified: !!data.isVerified,
+        membersCount: data.membersCount || 1,
+        approximateMembers: data.approximateMembers || data.membersCount || 1,
+        members: data.members || (data.primaryAdminId ? [data.primaryAdminId] : []),
+        eventsCount: data.eventsCount || 0,
+        primaryAdminId: data.primaryAdminId || '',
+        secondaryAdmins: data.secondaryAdmins || [],
+        createdAt: data.createdAt?.toDate ? data.createdAt.toDate() : new Date(),
+        updatedAt: data.updatedAt?.toDate ? data.updatedAt.toDate() : new Date()
+      };
+      const idx = localCommunities.findIndex(c => c.id === communityId);
+      if (idx >= 0) localCommunities[idx] = comm;
+      else localCommunities.push(comm);
+      return comm;
+    }
+  } catch (err) {
+    console.warn('Error recuperando comunidad por ID:', err);
+  }
+  return localCommunities.find(c => c.id === communityId) || null;
+};
+
 export const joinCommunity = async (
   communityId: string, 
-  userId: string
+  userId: string,
+  applicantName: string = 'Un tutor'
 ): Promise<{ 
   success: boolean; 
   status: 'JOINED' | 'PENDING_APPROVAL' | 'ALREADY_MEMBER' | 'ALREADY_PENDING'; 
@@ -266,9 +335,10 @@ export const joinCommunity = async (
       const currentMembers: string[] = data.members || [];
       const pending: string[] = data.pendingMembers || [];
       const accessType: CommunityAccessType = (data.accessType || 'open') as CommunityAccessType;
+      const commName = data.name || 'la comunidad';
 
       if (currentMembers.includes(userId) || data.primaryAdminId === userId) {
-        return { success: false, status: 'ALREADY_MEMBER', message: `¡Ya eres miembro de la comunidad ${data.name || ''}!` };
+        return { success: false, status: 'ALREADY_MEMBER', message: `¡Ya eres miembro de la comunidad ${commName}!` };
       }
 
       // Si requiere aprobación del creador
@@ -290,8 +360,32 @@ export const joinCommunity = async (
           'COMMUNITY_JOIN_REQUEST',
           'communities',
           communityId,
-          `Solicitud de ingreso enviada a comunidad privada: ${data.name}`
+          `Solicitud de ingreso enviada a comunidad privada: ${commName}`
         );
+
+        // 1. Notificar al Administrador Principal de la comunidad
+        if (data.primaryAdminId) {
+          await notifyAdminOfJoinRequest(data.primaryAdminId, communityId, commName, applicantName, userId);
+        }
+
+        // 2. Notificar a administradores secundarios con permisos de miembros
+        if (data.secondaryAdmins && Array.isArray(data.secondaryAdmins)) {
+          for (const sec of data.secondaryAdmins) {
+            if (sec.userId && sec.permissions?.canManageMembers) {
+              await notifyAdminOfJoinRequest(sec.userId, communityId, commName, applicantName, userId);
+            }
+          }
+        }
+
+        // 3. Notificar al solicitante
+        await sendNotificationToUser(userId, {
+          title: `⏳ Solicitud enviada a ${commName}`,
+          message: `Tu solicitud para unirte a "${commName}" fue enviada exitosamente. El administrador revisará tu perfil para validar el acceso.`,
+          type: 'community',
+          communityId,
+          communityName: commName
+        });
+
         return {
           success: true,
           status: 'PENDING_APPROVAL',
@@ -333,6 +427,12 @@ export const joinCommunity = async (
       return { success: false, status: 'ALREADY_PENDING', message: `Tu solicitud ya fue enviada y está en revisión por el creador.` };
     }
     comm.pendingMembers.push(userId);
+
+    // Notificar al admin principal local
+    if (comm.primaryAdminId) {
+      await notifyAdminOfJoinRequest(comm.primaryAdminId, communityId, comm.name, applicantName, userId);
+    }
+
     return { success: true, status: 'PENDING_APPROVAL', message: `¡Solicitud enviada! El creador revisará tu ingreso.` };
   }
 

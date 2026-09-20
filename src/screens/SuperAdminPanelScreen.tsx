@@ -128,6 +128,22 @@ export const SuperAdminPanelScreen: React.FC = () => {
 
   useEffect(() => {
     loadAllCrmData();
+    const crmInterval = setInterval(() => {
+      Promise.all([
+        getUsersFromDb(),
+        getCommunityRequests(),
+        getCommunities(),
+        getAuditLogs(),
+        getEvents()
+      ]).then(([uData, reqData, commData, auditData, evData]) => {
+        setUsers(uData);
+        setCommunityRequests(reqData);
+        setCommunities(commData);
+        setAuditLogs(auditData);
+        setEvents(evData);
+      }).catch(() => {});
+    }, 4000);
+    return () => clearInterval(crmInterval);
   }, []);
 
   const loadAllCrmData = async () => {
