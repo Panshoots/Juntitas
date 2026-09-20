@@ -1,8 +1,9 @@
-﻿export type NotificationType = 
+export type NotificationType = 
   | 'event_cancelled' 
   | 'event_created' 
   | 'event_deleted' 
   | 'community' 
+  | 'community_expelled'
   | 'system';
 
 export interface AppNotification {

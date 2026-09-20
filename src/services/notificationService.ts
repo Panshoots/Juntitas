@@ -1,4 +1,4 @@
-﻿import { 
+import { 
   collection, 
   doc, 
   getDocs, 
@@ -123,6 +123,60 @@ export const notifyAttendeesOfDeletion = async (
   }
 
   return sentCount;
+};
+
+/**
+ * Notificar a un tutor que ha sido expulsado de la comunidad con el motivo
+ */
+export const notifyMemberOfExpulsion = async (
+  userId: string,
+  communityId: string,
+  communityName: string,
+  reason: string
+): Promise<void> => {
+  await sendNotificationToUser(userId, {
+    title: `🚨 Expulsión de la comunidad "${communityName}"`,
+    message: `Has sido expulsado de la comunidad "${communityName}". Motivo: ${reason}`,
+    type: 'community_expelled',
+    communityId,
+    communityName,
+    cancellationReason: reason
+  });
+};
+
+/**
+ * Notificar a un aspirante que su solicitud de ingreso fue aprobada
+ */
+export const notifyMemberOfApproval = async (
+  userId: string,
+  communityId: string,
+  communityName: string
+): Promise<void> => {
+  await sendNotificationToUser(userId, {
+    title: `🎉 ¡Solicitud Aprobada en ${communityName}!`,
+    message: `¡Felicidades! Has sido aceptado como miembro oficial de ${communityName}. Ganaste +10 🐾 Huellitas de bienvenida.`,
+    type: 'community',
+    communityId,
+    communityName
+  });
+};
+
+/**
+ * Notificar a un aspirante que su solicitud no fue aceptada
+ */
+export const notifyMemberOfRejection = async (
+  userId: string,
+  communityId: string,
+  communityName: string,
+  reason?: string
+): Promise<void> => {
+  await sendNotificationToUser(userId, {
+    title: `📩 Solicitud en ${communityName}`,
+    message: `Tu solicitud para unirte a ${communityName} no fue aprobada en esta ocasión. ${reason ? 'Motivo: ' + reason : ''}`,
+    type: 'community',
+    communityId,
+    communityName
+  });
 };
 
 /**

@@ -1,4 +1,4 @@
-﻿import React from 'react';
+import React from 'react';
 import { 
   View, 
   Text, 
@@ -38,6 +38,8 @@ export const NotificationsModal: React.FC<NotificationsModalProps> = ({
         return <View style={[styles.iconBadge, { backgroundColor: '#FEF2F2' }]}><Ionicons name="trash-bin" size={20} color="#EF4444" /></View>;
       case 'event_created':
         return <View style={[styles.iconBadge, { backgroundColor: '#DCFCE7' }]}><Ionicons name="calendar" size={20} color="#15803D" /></View>;
+      case 'community_expelled':
+        return <View style={[styles.iconBadge, { backgroundColor: '#FEE2E2' }]}><Ionicons name="ban" size={20} color="#DC2626" /></View>;
       case 'community':
         return <View style={[styles.iconBadge, { backgroundColor: '#E0F2FE' }]}><Ionicons name="paw" size={20} color="#0284C7" /></View>;
       default:

@@ -14,6 +14,7 @@ import { db } from '../firebase/config';
 import { Community, CommunityRequest, SecondaryAdminPermissions, SecondaryAdminInfo, CommunityAccessType } from '../models/Community';
 import { logAuditAction } from './auditService';
 import { awardPaws } from './gamificationService';
+import { notifyMemberOfExpulsion, notifyMemberOfApproval, notifyMemberOfRejection } from './notificationService';
 
 let localCommunities: Community[] = [];
 let localRequests: CommunityRequest[] = [];
@@ -386,6 +387,9 @@ export const approveMemberRequest = async (
     `Aspirante ${applicantUserId} aprobado para ingresar a la comunidad`
   );
 
+  // Notificar al nuevo miembro
+  await notifyMemberOfApproval(applicantUserId, communityId, comm?.name || 'la comunidad');
+
   return { success: true, message: '¡Solicitud aprobada! El usuario ahora es miembro oficial.' };
 };
 
@@ -424,6 +428,9 @@ export const rejectMemberRequest = async (
     communityId,
     `Solicitud del usuario ${applicantUserId} rechazada por el administrador`
   );
+
+  // Notificar al aspirante
+  await notifyMemberOfRejection(applicantUserId, communityId, comm?.name || 'la comunidad');
 
   return { success: true, message: 'Solicitud rechazada.' };
 };
@@ -475,6 +482,9 @@ export const removeMemberFromCommunity = async (
     communityId,
     `Tutor ${memberUserId} expulsado de la comunidad. Motivo: ${reason}`
   );
+
+  // Enviar notificación formal al tutor con el motivo de expulsión
+  await notifyMemberOfExpulsion(memberUserId, communityId, comm?.name || 'la comunidad', reason);
 
   return { success: true, message: 'El tutor ha sido expulsado exitosamente de la comunidad.' };
 };

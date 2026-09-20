@@ -53,10 +53,18 @@ export const HomeScreen: React.FC = () => {
 
   useEffect(() => {
     loadNotifications();
+    const interval = setInterval(() => {
+      loadNotifications();
+    }, 3000);
+    return () => clearInterval(interval);
   }, [currentUser?.id]);
 
   const unreadNotifsCount = notifications.filter(n => !n.read).length;
-  const latestCancelledNotif = notifications.find(n => !n.read && (n.type === 'event_cancelled' || n.type === 'event_deleted'));
+  const latestCancelledNotif = notifications.find(n => !n.read && (
+    n.type === 'event_cancelled' || 
+    n.type === 'event_deleted' || 
+    n.type === 'community_expelled'
+  ));
 
   // Racha Diaria (Daily Streak)
   const [streakReward, setStreakReward] = useState<DailyStreakResult | null>(null);
@@ -161,13 +169,22 @@ export const HomeScreen: React.FC = () => {
         </View>
       </View>
 
-      {/* Banner Urgente de Aviso de Cancelación de Junta */}
+      {/* Banner Urgente de Aviso de Cancelación de Junta o Expulsión de Comunidad */}
       {latestCancelledNotif && (
-        <View style={styles.cancellationBanner}>
+        <View style={[
+          styles.cancellationBanner,
+          latestCancelledNotif.type === 'community_expelled' && { backgroundColor: '#FEF2F2', borderColor: '#FCA5A5' }
+        ]}>
           <View style={styles.cancellationBannerHeader}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flex: 1 }}>
-              <Ionicons name="alert-circle" size={18} color="#DC2626" />
-              <Text style={styles.cancellationBannerTitle}>Aviso: Junta Cancelada</Text>
+              <Ionicons 
+                name={latestCancelledNotif.type === 'community_expelled' ? "ban" : "alert-circle"} 
+                size={18} 
+                color="#DC2626" 
+              />
+              <Text style={styles.cancellationBannerTitle}>
+                {latestCancelledNotif.type === 'community_expelled' ? 'Aviso: Expulsión de Comunidad' : 'Aviso: Junta Cancelada'}
+              </Text>
             </View>
             <TouchableOpacity 
               onPress={async () => {
@@ -179,10 +196,15 @@ export const HomeScreen: React.FC = () => {
               <Ionicons name="close" size={18} color="#991B1B" />
             </TouchableOpacity>
           </View>
-          <Text style={styles.cancellationBannerEvent}>"{latestCancelledNotif.eventTitle || 'Junta Canina'}"</Text>
+          <Text style={styles.cancellationBannerEvent}>
+            {latestCancelledNotif.type === 'community_expelled'
+              ? `"${latestCancelledNotif.communityName || 'Comunidad'}"`
+              : `"${latestCancelledNotif.eventTitle || 'Junta Canina'}"`
+            }
+          </Text>
           <View style={styles.cancellationReasonBox}>
             <Text style={styles.cancellationReasonText}>
-              Motivo: {latestCancelledNotif.cancellationReason || 'Cancelación informada por la organización.'}
+              Motivo: {latestCancelledNotif.cancellationReason || 'Incumplimiento de normas de convivencia.'}
             </Text>
           </View>
         </View>
