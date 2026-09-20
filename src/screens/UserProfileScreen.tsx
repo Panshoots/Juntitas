@@ -9,7 +9,10 @@ import {
   Switch,
   Modal,
   TextInput,
-  RefreshControl
+  RefreshControl,
+  KeyboardAvoidingView,
+  Platform,
+  Alert
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -101,12 +104,55 @@ const ALL_OFFICIAL_BADGES: OfficialBadgeInfo[] = [
 export const UserProfileScreen: React.FC = () => {
   const insets = useSafeAreaInsets();
   const navigation = useNavigation<any>();
-  const { activeProfile, currentUser, currentDogs, addDogToUser, updateUserPhoto, isSuperAdmin, isBusinessOwner, logout } = useAuth();
+  const { activeProfile, currentUser, currentDogs, addDogToUser, updateUserPhoto, updateUserProfile, isSuperAdmin, isBusinessOwner, logout } = useAuth();
   const { showToast } = useToast();
 
   const [showDogsPublic, setShowDogsPublic] = useState(true);
   const [showCommunitiesPublic, setShowCommunitiesPublic] = useState(true);
   const [showAttendancePublic, setShowAttendancePublic] = useState(true);
+
+  // Estados para Edición de Datos Personales
+  const [showEditPersonalModal, setShowEditPersonalModal] = useState(false);
+  const [editDisplayName, setEditDisplayName] = useState(currentUser.displayName || '');
+  const [editPhone, setEditPhone] = useState(currentUser.contact?.phone || '');
+  const [editInstagram, setEditInstagram] = useState(currentUser.contact?.instagram || '');
+  const [editComuna, setEditComuna] = useState(currentUser.location?.comuna || '');
+  const [editRegion, setEditRegion] = useState(currentUser.location?.region || '');
+  const [editBio, setEditBio] = useState(currentUser.bio || '');
+  const [savingPersonal, setSavingPersonal] = useState(false);
+
+  const handleOpenEditPersonal = () => {
+    setEditDisplayName(currentUser.displayName || '');
+    setEditPhone(currentUser.contact?.phone || '');
+    setEditInstagram(currentUser.contact?.instagram || '');
+    setEditComuna(currentUser.location?.comuna || 'Santiago');
+    setEditRegion(currentUser.location?.region || 'Metropolitana');
+    setEditBio(currentUser.bio || '');
+    setShowEditPersonalModal(true);
+  };
+
+  const handleSavePersonalData = async () => {
+    if (!editDisplayName.trim()) {
+      Alert.alert('Campo obligatorio', 'Por favor ingresa tu nombre y apellido.');
+      return;
+    }
+    setSavingPersonal(true);
+    const res = await updateUserProfile({
+      displayName: editDisplayName,
+      phone: editPhone,
+      instagram: editInstagram,
+      comuna: editComuna,
+      region: editRegion,
+      bio: editBio
+    });
+    setSavingPersonal(false);
+    if (res.success) {
+      showToast(res.message, 'success');
+      setShowEditPersonalModal(false);
+    } else {
+      Alert.alert('Error', res.message || 'No se pudieron guardar los datos.');
+    }
+  };
 
   // Estados para foto de perfil de usuario
   const [showAvatarPickerModal, setShowAvatarPickerModal] = useState(false);
@@ -349,6 +395,100 @@ export const UserProfileScreen: React.FC = () => {
         </View>
       )}
 
+      {/* Zona de Datos Personales y Contacto */}
+      <View style={styles.section}>
+        <View style={styles.sectionHeaderRow}>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.sectionTitle}>👤 Datos Personales & Contacto</Text>
+            <Text style={styles.sectionSubtitle}>Información visible para juntas y tutores</Text>
+          </View>
+          <TouchableOpacity 
+            style={styles.editPersonalBtn} 
+            onPress={handleOpenEditPersonal}
+            activeOpacity={0.8}
+          >
+            <Ionicons name="pencil" size={14} color="#0284C7" />
+            <Text style={styles.editPersonalBtnText}>Editar Datos</Text>
+          </TouchableOpacity>
+        </View>
+
+        <View style={styles.personalInfoCard}>
+          <View style={styles.personalInfoRow}>
+            <View style={styles.personalInfoIconWrap}>
+              <Ionicons name="person-outline" size={16} color="#0284C7" />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.personalInfoLabel}>Nombre Completo</Text>
+              <Text style={styles.personalInfoValue}>{currentUser.displayName || 'No especificado'}</Text>
+            </View>
+          </View>
+
+          <View style={styles.personalInfoDivider} />
+
+          <View style={styles.personalInfoRow}>
+            <View style={styles.personalInfoIconWrap}>
+              <Ionicons name="mail-outline" size={16} color="#0284C7" />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.personalInfoLabel}>Correo Electrónico (Cuenta)</Text>
+              <Text style={styles.personalInfoValue}>{currentUser.email}</Text>
+            </View>
+          </View>
+
+          <View style={styles.personalInfoDivider} />
+
+          <View style={styles.personalInfoRow}>
+            <View style={styles.personalInfoIconWrap}>
+              <Ionicons name="call-outline" size={16} color="#0284C7" />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.personalInfoLabel}>Teléfono / WhatsApp</Text>
+              <Text style={styles.personalInfoValue}>{currentUser.contact?.phone || 'Sin registrar'}</Text>
+            </View>
+          </View>
+
+          <View style={styles.personalInfoDivider} />
+
+          <View style={styles.personalInfoRow}>
+            <View style={styles.personalInfoIconWrap}>
+              <Ionicons name="location-outline" size={16} color="#0284C7" />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.personalInfoLabel}>Comuna & Región</Text>
+              <Text style={styles.personalInfoValue}>
+                {currentUser.location?.comuna || 'Santiago'}, {currentUser.location?.region || 'Metropolitana'}
+              </Text>
+            </View>
+          </View>
+
+          <View style={styles.personalInfoDivider} />
+
+          <View style={styles.personalInfoRow}>
+            <View style={styles.personalInfoIconWrap}>
+              <Ionicons name="logo-instagram" size={16} color="#E1306C" />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.personalInfoLabel}>Instagram</Text>
+              <Text style={styles.personalInfoValue}>{currentUser.contact?.instagram || 'Sin registrar'}</Text>
+            </View>
+          </View>
+
+          <View style={styles.personalInfoDivider} />
+
+          <View style={styles.personalInfoRow}>
+            <View style={styles.personalInfoIconWrap}>
+              <Ionicons name="chatbox-ellipses-outline" size={16} color="#0284C7" />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.personalInfoLabel}>Biografía / Presentación</Text>
+              <Text style={styles.personalInfoValue}>
+                {currentUser.bio || '¡Hola! Soy tutor perruno y me encanta asistir a juntas con mi manada.'}
+              </Text>
+            </View>
+          </View>
+        </View>
+      </View>
+
       {/* Mis Perritos Registrados (Plan Estándar: Máximo 2) */}
       <View style={styles.section}>
         <View style={styles.sectionHeaderRow}>
@@ -370,32 +510,18 @@ export const UserProfileScreen: React.FC = () => {
           )}
         </View>
 
-        {/* Aviso de Límite Alcanzado */}
-        {reachedDogLimit && (
-          <View style={styles.vipNoticeCard}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 4 }}>
-              <Ionicons name="star" size={16} color="#B45309" />
-              <Text style={styles.vipNoticeTitle}>Límite del Plan Estándar alcanzado (2/2 perritos)</Text>
-            </View>
-            <Text style={styles.vipNoticeText}>
-              En futuras versiones podrás contratar la Membresía VIP para registrar perritos ilimitados y obtener beneficios premium en eventos.
-            </Text>
-          </View>
-        )}
-
         {currentDogs.length === 0 ? (
           <View style={styles.emptyDogsCard}>
-            <Ionicons name="paw-outline" size={36} color="#94A3B8" style={{ marginBottom: 8 }} />
-            <Text style={styles.emptyDogsTitle}>Aún no has registrado a tus perritos</Text>
+            <Ionicons name="paw" size={32} color="#94A3B8" />
+            <Text style={styles.emptyDogsTitle}>Aún no registras ningún perrito</Text>
             <Text style={styles.emptyDogsText}>
-              Agrega a tu perrito para crear su Pasaporte Canino Oficial, asistir a juntas y acumular medallas.
+              Agrega a tu perrito para participar en juntas y acceder a su pasaporte digital canino.
             </Text>
             <TouchableOpacity 
-              style={styles.registerFirstDogBtn} 
+              style={styles.registerFirstDogBtn}
               onPress={() => setShowAddDogModal(true)}
             >
-              <Ionicons name="add-circle" size={18} color="#FFFFFF" />
-              <Text style={styles.registerFirstDogBtnText}>Registrar a mi Perrito (+50 🐾)</Text>
+              <Text style={styles.registerFirstDogBtnText}>+ Registrar mi Primer Perrito</Text>
             </TouchableOpacity>
           </View>
         ) : (
@@ -412,7 +538,7 @@ export const UserProfileScreen: React.FC = () => {
               />
               <View style={styles.petInfo}>
                 <Text style={styles.petName}>{dog.name}</Text>
-                <Text style={styles.petBreed}>{dog.breed} • {dog.gender}</Text>
+                <Text style={styles.petBreed}>{dog.breed} • {dog.gender === 'macho' ? '♂ Macho' : '♀ Hembra'}</Text>
                 <Text style={styles.petMeta}>
                   {dog.passport?.attendedEventsCount || 0} Juntas asistidas • {dog.passport?.badges?.length || 1} Medallas
                 </Text>
@@ -442,13 +568,24 @@ export const UserProfileScreen: React.FC = () => {
           <View style={styles.badgesGrid}>
             {unlockedBadges.map(b => (
               <View key={b.id} style={styles.badgeCardUnlocked}>
-                <View style={[styles.badgeIconCircle, { backgroundColor: b.color + '20' }]}>
-                  <Ionicons name={b.icon} size={24} color={b.color} />
+                <View style={styles.badgeCardHeader}>
+                  <View style={[styles.badgeIconCircle, { backgroundColor: b.color + '20' }]}>
+                    <Ionicons name={b.icon} size={22} color={b.color} />
+                  </View>
+                  <View style={styles.unlockedStatusChip}>
+                    <Ionicons name="checkmark-circle" size={11} color="#059669" />
+                    <Text style={styles.unlockedStatusText}>Lograda</Text>
+                  </View>
                 </View>
-                <Text style={styles.badgeName}>{b.name}</Text>
-                <Text style={styles.badgeDesc}>{b.description}</Text>
+
+                <View style={styles.badgeCardBody}>
+                  <Text style={styles.badgeName} numberOfLines={1}>{b.name}</Text>
+                  <Text style={styles.badgeDesc} numberOfLines={3}>{b.description}</Text>
+                </View>
+
                 <View style={styles.badgeRewardTag}>
-                  <Text style={styles.badgeRewardText}>+{b.pawsReward} 🐾 Ganadas</Text>
+                  <Ionicons name="paw" size={11} color="#0284C7" />
+                  <Text style={styles.badgeRewardText}>+{b.pawsReward} Ganadas</Text>
                 </View>
               </View>
             ))}
@@ -456,22 +593,30 @@ export const UserProfileScreen: React.FC = () => {
         )}
 
         {/* Medallas por Desbloquear */}
-        <Text style={[styles.badgeCategoryTitle, { marginTop: 18 }]}>
+        <Text style={[styles.badgeCategoryTitle, { marginTop: 20 }]}>
           🔒 Medallas Faltantes por Desbloquear ({lockedBadges.length})
         </Text>
         <View style={styles.badgesGrid}>
           {lockedBadges.map(b => (
             <View key={b.id} style={styles.badgeCardLocked}>
-              <View style={styles.lockedIconOverlay}>
-                <Ionicons name="lock-closed" size={16} color="#64748B" />
+              <View style={styles.badgeCardHeader}>
+                <View style={[styles.badgeIconCircle, { backgroundColor: '#F1F5F9' }]}>
+                  <Ionicons name={b.icon} size={22} color="#94A3B8" />
+                </View>
+                <View style={styles.lockedStatusChip}>
+                  <Ionicons name="lock-closed" size={11} color="#64748B" />
+                  <Text style={styles.lockedStatusText}>Bloqueada</Text>
+                </View>
               </View>
-              <View style={[styles.badgeIconCircle, { backgroundColor: '#F1F5F9' }]}>
-                <Ionicons name={b.icon} size={24} color="#94A3B8" />
+
+              <View style={styles.badgeCardBody}>
+                <Text style={styles.badgeNameLocked} numberOfLines={1}>{b.name}</Text>
+                <Text style={styles.badgeReqText} numberOfLines={3}>Requisito: {b.requirement}</Text>
               </View>
-              <Text style={styles.badgeNameLocked}>{b.name}</Text>
-              <Text style={styles.badgeReqText}>Requisito: {b.requirement}</Text>
+
               <View style={styles.badgeRewardTagLocked}>
-                <Text style={styles.badgeRewardTextLocked}>Premio: +{b.pawsReward} 🐾</Text>
+                <Ionicons name="paw" size={11} color="#64748B" />
+                <Text style={styles.badgeRewardTextLocked}>Premio: +{b.pawsReward}</Text>
               </View>
             </View>
           ))}
@@ -793,6 +938,90 @@ export const UserProfileScreen: React.FC = () => {
           </View>
         </View>
       </Modal>
+
+      {/* MODAL: EDITAR DATOS PERSONALES */}
+      <Modal visible={showEditPersonalModal} transparent animationType="slide">
+        <KeyboardAvoidingView 
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined} 
+          style={styles.modalOverlay}
+        >
+          <View style={styles.modalCard}>
+            <View style={styles.modalHeader}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                <Ionicons name="person" size={20} color="#0284C7" />
+                <Text style={styles.modalTitle}>Editar Datos Personales</Text>
+              </View>
+              <TouchableOpacity onPress={() => setShowEditPersonalModal(false)}>
+                <Ionicons name="close" size={24} color="#64748B" />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView showsVerticalScrollIndicator={false} style={{ maxHeight: 420 }}>
+              <Text style={styles.fieldLabel}>Nombre y Apellido *</Text>
+              <TextInput
+                value={editDisplayName}
+                onChangeText={setEditDisplayName}
+                style={styles.modalInput}
+                placeholder="Ej: Juan Pérez"
+              />
+
+              <Text style={styles.fieldLabel}>Teléfono / WhatsApp</Text>
+              <TextInput
+                value={editPhone}
+                onChangeText={setEditPhone}
+                style={styles.modalInput}
+                placeholder="+56 9 1234 5678"
+                keyboardType="phone-pad"
+              />
+
+              <Text style={styles.fieldLabel}>Comuna</Text>
+              <TextInput
+                value={editComuna}
+                onChangeText={setEditComuna}
+                style={styles.modalInput}
+                placeholder="Ej: Providencia"
+              />
+
+              <Text style={styles.fieldLabel}>Región</Text>
+              <TextInput
+                value={editRegion}
+                onChangeText={setEditRegion}
+                style={styles.modalInput}
+                placeholder="Ej: Metropolitana"
+              />
+
+              <Text style={styles.fieldLabel}>Instagram</Text>
+              <TextInput
+                value={editInstagram}
+                onChangeText={setEditInstagram}
+                style={styles.modalInput}
+                placeholder="@usuario"
+                autoCapitalize="none"
+              />
+
+              <Text style={styles.fieldLabel}>Biografía / Presentación</Text>
+              <TextInput
+                value={editBio}
+                onChangeText={setEditBio}
+                style={[styles.modalInput, { height: 75, textAlignVertical: 'top' }]}
+                placeholder="Cuéntanos un poco sobre ti y tus perritos..."
+                multiline
+                numberOfLines={3}
+              />
+            </ScrollView>
+
+            <TouchableOpacity 
+              style={[styles.submitReqButton, savingPersonal && { opacity: 0.6 }]}
+              onPress={handleSavePersonalData}
+              disabled={savingPersonal}
+            >
+              <Text style={styles.submitReqBtnText}>
+                {savingPersonal ? 'Guardando cambios...' : 'Guardar Información'}
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
     </ScrollView>
   );
 };
@@ -1020,6 +1249,65 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#0284C7',
   },
+  editPersonalBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F0F9FF',
+    borderWidth: 1.5,
+    borderColor: '#BAE6FD',
+    borderRadius: 12,
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    gap: 4,
+  },
+  editPersonalBtnText: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: '#0284C7',
+  },
+  personalInfoCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.03,
+    shadowRadius: 3,
+    elevation: 1,
+  },
+  personalInfoRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 10,
+    gap: 12,
+  },
+  personalInfoIconWrap: {
+    width: 34,
+    height: 34,
+    borderRadius: 10,
+    backgroundColor: '#F0F9FF',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  personalInfoLabel: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#64748B',
+    marginBottom: 2,
+  },
+  personalInfoValue: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#0F172A',
+    lineHeight: 18,
+  },
+  personalInfoDivider: {
+    height: 1,
+    backgroundColor: '#F1F5F9',
+  },
   badgeCategoryTitle: {
     fontSize: 13,
     fontWeight: '700',
@@ -1035,84 +1323,136 @@ const styles = StyleSheet.create({
   badgesGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 10,
+    justifyContent: 'space-between',
+    rowGap: 12,
   },
   badgeCardUnlocked: {
     width: '48%',
+    minHeight: 195,
     backgroundColor: '#FFFFFF',
-    borderRadius: 14,
+    borderRadius: 16,
     padding: 12,
-    borderWidth: 1,
+    borderWidth: 1.5,
     borderColor: '#BAE6FD',
+    justifyContent: 'space-between',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 4,
+    elevation: 2,
   },
   badgeCardLocked: {
     width: '48%',
+    minHeight: 195,
     backgroundColor: '#F8FAFC',
-    borderRadius: 14,
+    borderRadius: 16,
     padding: 12,
     borderWidth: 1,
     borderColor: '#E2E8F0',
-    opacity: 0.85,
+    justifyContent: 'space-between',
   },
-  lockedIconOverlay: {
-    position: 'absolute',
-    top: 8,
-    right: 8,
-  },
-  badgeIconCircle: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+  badgeCardHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
     alignItems: 'center',
+    marginBottom: 8,
+  },
+  badgeCardBody: {
+    flex: 1,
     justifyContent: 'center',
     marginBottom: 8,
   },
+  unlockedStatusChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#ECFDF5',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
+    gap: 3,
+    borderWidth: 1,
+    borderColor: '#A7F3D0',
+  },
+  unlockedStatusText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#059669',
+  },
+  lockedStatusChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F1F5F9',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
+    gap: 3,
+  },
+  lockedStatusText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#64748B',
+  },
+  badgeIconCircle: {
+    width: 38,
+    height: 38,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   badgeName: {
     fontSize: 13,
-    fontWeight: '700',
+    fontWeight: '800',
     color: '#0F172A',
     marginBottom: 4,
   },
   badgeNameLocked: {
     fontSize: 13,
-    fontWeight: '700',
-    color: '#64748B',
+    fontWeight: '800',
+    color: '#475569',
     marginBottom: 4,
   },
   badgeDesc: {
     fontSize: 11,
     color: '#64748B',
     lineHeight: 15,
-    marginBottom: 8,
   },
   badgeReqText: {
     fontSize: 11,
-    color: '#94A3B8',
+    color: '#64748B',
     lineHeight: 15,
-    marginBottom: 8,
   },
   badgeRewardTag: {
+    flexDirection: 'row',
+    alignItems: 'center',
     backgroundColor: '#E0F2FE',
     paddingHorizontal: 8,
-    paddingVertical: 3,
+    paddingVertical: 4,
     borderRadius: 8,
     alignSelf: 'flex-start',
+    gap: 4,
+    borderWidth: 1,
+    borderColor: '#BAE6FD',
   },
   badgeRewardText: {
     fontSize: 10,
-    fontWeight: '700',
-    color: '#0369A1',
+    fontWeight: '800',
+    color: '#0284C7',
   },
   badgeRewardTagLocked: {
+    flexDirection: 'row',
+    alignItems: 'center',
     backgroundColor: '#F1F5F9',
     paddingHorizontal: 8,
-    paddingVertical: 3,
+    paddingVertical: 4,
     borderRadius: 8,
     alignSelf: 'flex-start',
+    gap: 4,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
   },
   badgeRewardTextLocked: {
     fontSize: 10,
-    fontWeight: '600',
+    fontWeight: '700',
     color: '#64748B',
   },
   emptyRedemptionsCard: {
@@ -1261,6 +1601,30 @@ const styles = StyleSheet.create({
     color: '#334155',
     marginBottom: 4,
     marginTop: 6,
+  },
+  fieldLabel: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#334155',
+    marginBottom: 4,
+    marginTop: 6,
+  },
+  submitReqButton: {
+    backgroundColor: '#0284C7',
+    paddingVertical: 13,
+    borderRadius: 12,
+    alignItems: 'center',
+    marginTop: 12,
+    shadowColor: '#0284C7',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  submitReqBtnText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '700',
   },
   modalInput: {
     backgroundColor: '#F8FAFC',

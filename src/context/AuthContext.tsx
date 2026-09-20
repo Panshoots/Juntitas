@@ -103,6 +103,14 @@ interface AuthContextType {
   addDogToUser: (dogData: any) => Promise<{ success: boolean; message: string }>;
   refreshDogs: () => Promise<void>;
   updateUserPhoto: (photoUrl: string) => Promise<{ success: boolean; message: string }>;
+  updateUserProfile: (data: {
+    displayName?: string;
+    phone?: string;
+    instagram?: string;
+    region?: string;
+    comuna?: string;
+    bio?: string;
+  }) => Promise<{ success: boolean; message: string }>;
 
   // Permisos helpers
   isSuperAdmin: boolean;
@@ -136,6 +144,7 @@ const AuthContext = createContext<AuthContextType>({
   addDogToUser: async () => ({ success: false, message: '' }),
   refreshDogs: async () => {},
   updateUserPhoto: async () => ({ success: false, message: '' }),
+  updateUserProfile: async () => ({ success: false, message: '' }),
   isSuperAdmin: false,
   isPrimaryAdminOf: () => false,
   canCreateEventFor: () => false,
@@ -661,6 +670,72 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
+  const updateUserProfile = async (data: {
+    displayName?: string;
+    phone?: string;
+    instagram?: string;
+    region?: string;
+    comuna?: string;
+    bio?: string;
+  }): Promise<{ success: boolean; message: string }> => {
+    try {
+      const updatedFields: Record<string, any> = { updatedAt: new Date() };
+      if (data.displayName !== undefined) updatedFields.displayName = data.displayName.trim();
+      if (data.bio !== undefined) updatedFields.bio = data.bio.trim();
+      if (data.comuna !== undefined || data.region !== undefined) {
+        updatedFields.location = {
+          region: data.region || currentUser.location?.region || 'Metropolitana',
+          comuna: data.comuna || currentUser.location?.comuna || 'Santiago'
+        };
+      }
+      if (data.phone !== undefined || data.instagram !== undefined) {
+        updatedFields.contact = {
+          phone: data.phone || currentUser.contact?.phone || '',
+          instagram: data.instagram || currentUser.contact?.instagram || '',
+          isPublic: currentUser.contact?.isPublic ?? true
+        };
+      }
+
+      if (currentUser?.id) {
+        await updateDoc(doc(db, 'users', currentUser.id), updatedFields);
+      }
+
+      const updatedUser: AppUser = {
+        ...currentUser,
+        ...updatedFields,
+        location: updatedFields.location || currentUser.location,
+        contact: updatedFields.contact || currentUser.contact
+      };
+      setCurrentUser(updatedUser);
+      try {
+        await AsyncStorage.setItem('@juntitas_active_user', JSON.stringify(updatedUser));
+      } catch (e) {}
+
+      return { success: true, message: '¡Datos personales actualizados correctamente!' };
+    } catch (err: any) {
+      console.warn('Error actualizando perfil en Firestore/local:', err);
+      const updatedUser: AppUser = {
+        ...currentUser,
+        displayName: data.displayName !== undefined ? data.displayName.trim() : currentUser.displayName,
+        bio: data.bio !== undefined ? data.bio.trim() : currentUser.bio,
+        location: {
+          region: data.region || currentUser.location?.region || 'Metropolitana',
+          comuna: data.comuna || currentUser.location?.comuna || 'Santiago'
+        },
+        contact: {
+          phone: data.phone || currentUser.contact?.phone || '',
+          instagram: data.instagram || currentUser.contact?.instagram || '',
+          isPublic: currentUser.contact?.isPublic ?? true
+        }
+      };
+      setCurrentUser(updatedUser);
+      try {
+        await AsyncStorage.setItem('@juntitas_active_user', JSON.stringify(updatedUser));
+      } catch (e) {}
+      return { success: true, message: '¡Datos personales actualizados!' };
+    }
+  };
+
   const isSuperAdmin = currentUser.isSuperAdmin || currentUser.roleType === 'super_admin';
 
   const isPrimaryAdminOf = (communityId: string) => {
@@ -703,6 +778,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         addDogToUser,
         refreshDogs,
         updateUserPhoto,
+        updateUserProfile,
         isSuperAdmin,
         isPrimaryAdminOf,
         canCreateEventFor,

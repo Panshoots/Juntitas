@@ -42,6 +42,44 @@ import { useToast } from '../context/ToastContext';
 
 type CrmTab = 'users' | 'communities' | 'events' | 'audit';
 
+const getAuditBadgeInfo = (action: string) => {
+  const upper = (action || '').toUpperCase();
+  if (upper.includes('PHOTO') || upper.includes('COMMUNITY_UPDATE')) {
+    return { label: 'Edición de Comunidad', icon: 'images', color: '#0284C7', bg: '#E0F2FE' };
+  }
+  if (upper.includes('PAW') || upper.includes('SURPRISE')) {
+    return { label: 'Huella Sorpresa', icon: 'paw', color: '#D97706', bg: '#FEF3C7' };
+  }
+  if (upper.includes('SUSPEND') || upper.includes('BAN')) {
+    return { label: 'Usuario Suspendido', icon: 'alert-circle', color: '#DC2626', bg: '#FEF2F2' };
+  }
+  if (upper.includes('ACTIVATE') || upper.includes('UNBAN')) {
+    return { label: 'Usuario Reactivado', icon: 'checkmark-circle', color: '#16A34A', bg: '#F0FDF4' };
+  }
+  if (upper.includes('ROLE')) {
+    return { label: 'Cambio de Rol', icon: 'key', color: '#7C3AED', bg: '#F5F3FF' };
+  }
+  if (upper.includes('PASSWORD') || upper.includes('RESET')) {
+    return { label: 'Recuperación Clave', icon: 'mail', color: '#0369A1', bg: '#E0F2FE' };
+  }
+  if (upper.includes('COMMUNITY_APPROVE') || upper.includes('APPROVE')) {
+    return { label: 'Comunidad Aprobada', icon: 'checkmark-circle', color: '#16A34A', bg: '#F0FDF4' };
+  }
+  if (upper.includes('COMMUNITY_REJECT') || upper.includes('REJECT')) {
+    return { label: 'Solicitud Rechazada', icon: 'close-circle', color: '#DC2626', bg: '#FEF2F2' };
+  }
+  if (upper.includes('EVENT') && upper.includes('CANCEL')) {
+    return { label: 'Junta Cancelada', icon: 'alert-circle', color: '#DC2626', bg: '#FEF2F2' };
+  }
+  if (upper.includes('EVENT')) {
+    return { label: 'Gestión de Junta', icon: 'calendar', color: '#0284C7', bg: '#E0F2FE' };
+  }
+  if (upper.includes('SEED')) {
+    return { label: 'Poblado de Datos', icon: 'sparkles', color: '#15803D', bg: '#F0FDF4' };
+  }
+  return { label: action.replace(/_/g, ' '), icon: 'document-text', color: '#475569', bg: '#F1F5F9' };
+};
+
 export const SuperAdminPanelScreen: React.FC = () => {
   const insets = useSafeAreaInsets();
   const { currentUser, sendPasswordReset } = useAuth();
@@ -829,20 +867,55 @@ export const SuperAdminPanelScreen: React.FC = () => {
           refreshControl={
             <RefreshControl refreshing={loading} onRefresh={loadAllCrmData} colors={['#0284C7']} tintColor="#0284C7" />
           }
-          renderItem={({ item }) => (
-            <View style={styles.auditCard}>
-              <View style={styles.auditHeaderRow}>
-                <Text style={styles.auditAction}>{item.action}</Text>
-                <Text style={styles.auditDate}>
-                  {item.timestamp?.toLocaleDateString ? item.timestamp.toLocaleDateString() : 'Hoy'}
-                </Text>
-              </View>
-              <Text style={styles.auditReason}>{item.details?.reason || (item as any).reason || 'Acción administrativa registrada'}</Text>
-              <Text style={styles.auditMeta}>
-                Actor: {item.actorUserId} • Entidad: {item.targetEntityType || (item as any).entityType}/{item.targetEntityId || (item as any).entityId}
+          ListEmptyComponent={
+            <View style={styles.emptyStateContainer}>
+              <Ionicons name="shield-checkmark-outline" size={44} color="#94A3B8" />
+              <Text style={styles.emptyStateTitle}>Sin registros de auditoría</Text>
+              <Text style={styles.emptyStateSub}>
+                Todas las acciones del sistema y moderación administrativa se registrarán aquí en tiempo real.
               </Text>
             </View>
-          )}
+          }
+          renderItem={({ item }) => {
+            const badge = getAuditBadgeInfo(item.action);
+            const dateStr = item.timestamp?.toLocaleDateString 
+              ? `${item.timestamp.toLocaleDateString('es-CL')} • ${item.timestamp.toLocaleTimeString ? item.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''}` 
+              : 'Hoy';
+            const actorStr = item.actorUserId === currentUser?.id 
+              ? 'Super Admin (Tú)' 
+              : (item.actorUserId ? (item.actorUserId.length > 14 ? `${item.actorUserId.slice(0, 6)}...${item.actorUserId.slice(-4)}` : item.actorUserId) : 'Sistema');
+            const entityType = item.targetEntityType || (item as any).entityType || 'general';
+            const entityId = item.targetEntityId || (item as any).entityId || '';
+            const entityStr = entityId ? (entityId.length > 18 ? `${entityId.slice(0, 8)}...${entityId.slice(-4)}` : entityId) : '';
+
+            return (
+              <View style={[styles.auditCard, { borderLeftColor: badge.color, borderLeftWidth: 4 }]}>
+                <View style={styles.auditHeaderRow}>
+                  <View style={[styles.auditActionBadge, { backgroundColor: badge.bg, borderColor: badge.color + '40' }]}>
+                    <Ionicons name={badge.icon as any} size={13} color={badge.color} />
+                    <Text style={[styles.auditActionText, { color: badge.color }]}>{badge.label}</Text>
+                  </View>
+                  <View style={styles.auditDateContainer}>
+                    <Ionicons name="time-outline" size={12} color="#94A3B8" />
+                    <Text style={styles.auditDate}>{dateStr}</Text>
+                  </View>
+                </View>
+
+                <Text style={styles.auditReason}>
+                  {item.details?.reason || (item as any).reason || 'Acción administrativa registrada en la plataforma.'}
+                </Text>
+
+                <View style={styles.auditMetaBox}>
+                  <Text style={styles.auditMetaText} numberOfLines={1}>
+                    👤 <Text style={{ fontWeight: '700' }}>Actor:</Text> {actorStr}
+                  </Text>
+                  <Text style={styles.auditMetaText} numberOfLines={1}>
+                    📁 <Text style={{ fontWeight: '700' }}>Entidad:</Text> {entityType}{entityStr ? ` (${entityStr})` : ''}
+                  </Text>
+                </View>
+              </View>
+            );
+          }}
         />
       )}
         </>
@@ -1134,11 +1207,16 @@ const styles = StyleSheet.create({
     borderColor: '#BAE6FD',
   },
   tabsScrollView: {
-    maxHeight: 52,
-    marginBottom: 12,
+    height: 56,
+    flexGrow: 0,
+    marginBottom: 10,
+    backgroundColor: '#FFFFFF',
+    borderBottomWidth: 1,
+    borderBottomColor: '#F1F5F9',
   },
   tabsScrollContent: {
-    paddingHorizontal: 20,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
     gap: 8,
     alignItems: 'center',
   },
@@ -1147,15 +1225,15 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: '#FFFFFF',
-    paddingVertical: 9,
-    paddingHorizontal: 14,
-    borderRadius: 20,
+    paddingVertical: 7,
+    paddingHorizontal: 13,
+    borderRadius: 18,
     gap: 6,
     borderWidth: 1,
     borderColor: '#E2E8F0',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.03,
+    shadowOpacity: 0.04,
     shadowRadius: 3,
     elevation: 1,
   },
@@ -1611,33 +1689,64 @@ const styles = StyleSheet.create({
   auditCard: {
     backgroundColor: '#FFFFFF',
     padding: 14,
-    borderRadius: 14,
+    borderRadius: 16,
     borderWidth: 1,
     borderColor: '#E2E8F0',
-    marginBottom: 10,
+    marginBottom: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 4,
+    elevation: 2,
   },
   auditHeaderRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    marginBottom: 4,
+    alignItems: 'center',
+    marginBottom: 8,
   },
-  auditAction: {
-    fontSize: 13,
+  auditActionBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+    borderWidth: 1,
+    gap: 5,
+  },
+  auditActionText: {
+    fontSize: 11,
     fontWeight: '800',
-    color: '#0284C7',
+    letterSpacing: 0.2,
+  },
+  auditDateContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
   },
   auditDate: {
     fontSize: 11,
-    color: '#94A3B8',
+    color: '#64748B',
+    fontWeight: '600',
   },
   auditReason: {
-    fontSize: 12,
-    color: '#334155',
-    marginBottom: 4,
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#1E293B',
+    lineHeight: 18,
+    marginBottom: 10,
   },
-  auditMeta: {
-    fontSize: 10,
-    color: '#94A3B8',
+  auditMetaBox: {
+    backgroundColor: '#F8FAFC',
+    borderRadius: 10,
+    padding: 8,
+    gap: 3,
+    borderWidth: 1,
+    borderColor: '#F1F5F9',
+  },
+  auditMetaText: {
+    fontSize: 11,
+    color: '#64748B',
   },
   modalOverlay: {
     flex: 1,
@@ -1799,6 +1908,26 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     maxWidth: 320,
     lineHeight: 19,
+  },
+  emptyStateContainer: {
+    paddingVertical: 50,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 24,
+  },
+  emptyStateTitle: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: '#334155',
+    marginTop: 12,
+    marginBottom: 4,
+  },
+  emptyStateSub: {
+    fontSize: 13,
+    color: '#94A3B8',
+    textAlign: 'center',
+    lineHeight: 18,
+    maxWidth: 280,
   },
 });
 

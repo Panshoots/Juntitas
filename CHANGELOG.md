@@ -18,11 +18,16 @@ El formato está basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1
 
 ### 🎨 Armonización UI/UX & Centrado Visual
 - **Tarjetas de Acción Rápida en Home**: Centrado perfecto de iconos, títulos y descripciones en la cuadrícula 2x2 (*Juntas & Eventos*, *Comunidades*, *Tienda Huellitas*, *Huella Sorpresa*).
-- **Encabezado Ejecutivo de Super Admin**: Rediseño del banner administrativo sin truncamientos de texto y con badge estilizado.
-- **Rediseño Completo del Panel CRM**:
+- **Badge de Huellitas en Header**: Reordenado para evitar truncamientos en pantallas estrechas, eliminando el emoji duplicado y asegurando `flexShrink: 0` junto a la campana de notificaciones.
+- **Rediseño Completo del Panel CRM & Auditoría**:
+  - Corrección de altura y padding en la barra de pestañas para evitar cortes verticales.
+  - Registro de auditoría visual con badges humanizados (`📸 Edición de Comunidad`, `🐾 Huella Sorpresa`, etc.), fecha/hora legible, actores simplificados y tarjetas con acento de color.
   - Encabezado con información ejecutiva del Super Administrador (*Francisco Juillet*).
-  - Pestañas con scroll horizontal fluido y badges con píldoras de conteo numérico en tiempo real (*Usuarios*, *Comunidades*, *Juntas*, *Auditoría*).
   - Botones de base de datos con sombras sutiles, espaciado armónico y tipografía optimizada.
+
+### 🏆 Logros, Medallas & Perfil del Tutor
+- **Ventana de Medallas Armónica**: Cuadrícula de 2 columnas con tarjetas de altura homogénea (`minHeight: 195`), chips de estado (*Lograda / Bloqueada*) y recompensas ancladas simétricamente en el pie de cada tarjeta.
+- **Zona de Datos Personales en Perfil**: Sección interactiva *"Datos Personales & Contacto"* que permite ver y modificar Nombre, Teléfono/WhatsApp, Comuna, Región, Instagram y Biografía con sincronización inmediata a Firestore y almacenamiento local.
 
 ---
 

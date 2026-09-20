@@ -130,12 +130,12 @@ export const HomeScreen: React.FC = () => {
     >
       {/* Header Principal con balance de Huellitas y Notificaciones */}
       <View style={styles.topHeader}>
-        <View>
-          <Text style={styles.appName}>🐶 Juntitas</Text>
-          <Text style={styles.tagline}>Vida social & experiencias para perritos</Text>
+        <View style={styles.topHeaderLeft}>
+          <Text style={styles.appName} numberOfLines={1}>🐶 Juntitas</Text>
+          <Text style={styles.tagline} numberOfLines={1}>Vida social & experiencias para perritos</Text>
         </View>
 
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+        <View style={styles.topHeaderRight}>
           {/* Botón Campana Notificaciones */}
           <TouchableOpacity 
             style={styles.notifBadgeBtn}
@@ -155,8 +155,8 @@ export const HomeScreen: React.FC = () => {
             onPress={() => navigation.navigate('Rewards')}
             activeOpacity={0.8}
           >
-            <Ionicons name="paw" size={18} color="#F59E0B" />
-            <Text style={styles.pawsCount}>{pawBalance} 🐾</Text>
+            <Ionicons name="paw" size={16} color="#F59E0B" />
+            <Text style={styles.pawsCount}>{pawBalance}</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -432,6 +432,16 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 20,
   },
+  topHeaderLeft: {
+    flex: 1,
+    marginRight: 10,
+  },
+  topHeaderRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    flexShrink: 0,
+  },
   notifBadgeBtn: {
     width: 40,
     height: 40,
@@ -529,12 +539,18 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: '#FEF3C7',
-    paddingHorizontal: 11,
+    paddingHorizontal: 12,
     paddingVertical: 7,
     borderRadius: 20,
     borderWidth: 1,
     borderColor: '#FDE68A',
-    gap: 4,
+    gap: 6,
+    flexShrink: 0,
+    shadowColor: '#F59E0B',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.12,
+    shadowRadius: 2,
+    elevation: 1,
   },
   pawsCount: {
     fontSize: 14,
