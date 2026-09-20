@@ -135,6 +135,7 @@ const AuthContext = createContext<AuthContextType>({
   loadUserDogs: async () => [],
   addDogToUser: async () => ({ success: false, message: '' }),
   refreshDogs: async () => {},
+  updateUserPhoto: async () => ({ success: false, message: '' }),
   isSuperAdmin: false,
   isPrimaryAdminOf: () => false,
   canCreateEventFor: () => false,

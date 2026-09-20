@@ -9,7 +9,8 @@ import {
   TouchableOpacity, 
   Modal,
   TextInput, 
-  RefreshControl 
+  RefreshControl,
+  ActivityIndicator 
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -89,33 +90,46 @@ export const EventsScreen: React.FC = () => {
   }, [currentDogs]);
 
   const [refreshing, setRefreshing] = useState(false);
+  const [loading, setLoading] = useState(true);
 
   const loadEvents = async () => {
-    const data = await getEvents();
-    setEvents(data);
-    if (currentUser?.id) {
-      const atts = await getUserAttendances(currentUser.id);
-      setAttendancesMap(atts);
+    const startTime = Date.now();
+    setLoading(true);
+    try {
+      const data = await getEvents();
+      setEvents(data);
+      if (currentUser?.id) {
+        const atts = await getUserAttendances(currentUser.id);
+        setAttendancesMap(atts);
 
-      // Cargar ÚNICAMENTE comunidades donde el usuario es Administrador Real (Titular o Secundario con canCreateEvents)
-      const userManaged = await getManagedCommunitiesForUser(
-        currentUser.id,
-        activeProfile.roleType,
-        activeProfile.communityIdManaged,
-        currentUser.email
-      );
-      setManagedCommunities(userManaged);
-      if (userManaged.length > 0) {
-        setSelectedCommunityToPublish(prev => {
-          if (prev && userManaged.some(m => m.id === prev.id)) return prev;
-          return userManaged[0];
-        });
+        // Cargar ÚNICAMENTE comunidades donde el usuario es Administrador Real (Titular o Secundario con canCreateEvents)
+        const userManaged = await getManagedCommunitiesForUser(
+          currentUser.id,
+          activeProfile.roleType,
+          activeProfile.communityIdManaged,
+          currentUser.email
+        );
+        setManagedCommunities(userManaged);
+        if (userManaged.length > 0) {
+          setSelectedCommunityToPublish(prev => {
+            if (prev && userManaged.some(m => m.id === prev.id)) return prev;
+            return userManaged[0];
+          });
+        } else {
+          setSelectedCommunityToPublish(null);
+        }
       } else {
+        setManagedCommunities([]);
         setSelectedCommunityToPublish(null);
       }
-    } else {
-      setManagedCommunities([]);
-      setSelectedCommunityToPublish(null);
+    } catch (e) {
+      console.warn('Error loading events:', e);
+    } finally {
+      // Experiencia de carga real con mínimo suave para evitar parpadeos
+      const elapsed = Date.now() - startTime;
+      const minDelay = Math.max(0, 350 - elapsed);
+      if (minDelay > 0) await new Promise(r => setTimeout(r, minDelay));
+      setLoading(false);
     }
   };
 
@@ -320,8 +334,17 @@ export const EventsScreen: React.FC = () => {
         )}
       </View>
 
-      <FlatList
-        data={events}
+      {loading ? (
+        <View style={styles.loadingContainer}>
+          <View style={styles.loadingSpinnerCircle}>
+            <ActivityIndicator size="large" color="#0284C7" />
+          </View>
+          <Text style={styles.loadingTitle}>Cargando Juntas Oficiales...</Text>
+          <Text style={styles.loadingSubtitle}>Sincronizando puntos de encuentro, mapas y manadas 🐾</Text>
+        </View>
+      ) : (
+        <FlatList
+          data={events}
         keyExtractor={item => item.id}
         contentContainerStyle={styles.listContent}
         refreshControl={
@@ -444,6 +467,7 @@ export const EventsScreen: React.FC = () => {
           );
         }}
       />
+      )}
 
       {/* Modal de Inscripción y Modificación de Asistencia con Selección de Perritos */}
       <Modal visible={showRegisterModal} transparent animationType="slide">
@@ -1963,5 +1987,35 @@ const styles = StyleSheet.create({
     color: '#0284C7',
     marginTop: 2,
     lineHeight: 15,
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingVertical: 80,
+    paddingHorizontal: 24,
+  },
+  loadingSpinnerCircle: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: '#E0F2FE',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 16,
+  },
+  loadingTitle: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: '#0F172A',
+    marginBottom: 6,
+    textAlign: 'center',
+  },
+  loadingSubtitle: {
+    fontSize: 13,
+    color: '#64748B',
+    textAlign: 'center',
+    maxWidth: 280,
+    lineHeight: 18,
   },
 });

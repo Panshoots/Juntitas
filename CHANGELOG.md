@@ -5,13 +5,24 @@ El formato está basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1
 
 ---
 
-## [Unreleased] - [1.1.0]
+## [1.1.0] - 2026-09-20
 
-### 📱 Próximo Hito: Empaquetado APK & Distribución Móvil
-- **Generación de binario APK para Android**: Compilación autónoma mediante Expo Application Services (EAS) o build local.
-- **Iconos Adaptativos Android**: Optimización de `adaptive-icon.png` con soporte para temas oscuros y claros del sistema.
-- **Pantalla Splash Nativa**: Configuración de `splash.image` y tiempos de transición a nivel de sistema operativo.
-- **Sincronización Offline Mejorada**: Almacenamiento en caché de juntas y pasaporte cuando no haya conexión móvil.
+### 📸 Álbum Dinámico & Moderación Comunitaria Controlada
+- **Álbum Aleatorio de la Manada**: Las fotos comunitarias se presentan de manera aleatoria y dinámica en cada carga para dar visibilidad equitativa a todos los perritos de la comunidad.
+- **Restricción de Subida de Fotos**: Los tutores generales ya no pueden subir fotos arbitrarias en cualquier momento sin control; el botón de carga queda reservado exclusivamente para los administradores de la comunidad (`primary_admin`, `secondary_admin` y Super Admin).
+- **Interacción Exclusiva por Likes (❤️)**: Los miembros y tutores disfrutan de una experiencia limpia y segura centrada en reaccionar con un like único a sus perritos favoritos.
+
+### ⏳ Experiencia de Carga Real con Feedback en Tiempo Real
+- **Indicadores de carga asíncronos y reales**: Implementados en **Juntas**, **Comunidades**, **Tienda Huellitas** y **Panel CRM**.
+- **Tolerancia y suavidad**: Spinner circular moderno con título explicativo y subtítulo contextual de estado que refleja la latencia real de la red/Firestore con un retraso mínimo suave (~350ms) que previene parpadeos de interfaz.
+
+### 🎨 Armonización UI/UX & Centrado Visual
+- **Tarjetas de Acción Rápida en Home**: Centrado perfecto de iconos, títulos y descripciones en la cuadrícula 2x2 (*Juntas & Eventos*, *Comunidades*, *Tienda Huellitas*, *Huella Sorpresa*).
+- **Encabezado Ejecutivo de Super Admin**: Rediseño del banner administrativo sin truncamientos de texto y con badge estilizado.
+- **Rediseño Completo del Panel CRM**:
+  - Encabezado con información ejecutiva del Super Administrador (*Francisco Juillet*).
+  - Pestañas con scroll horizontal fluido y badges con píldoras de conteo numérico en tiempo real (*Usuarios*, *Comunidades*, *Juntas*, *Auditoría*).
+  - Botones de base de datos con sombras sutiles, espaciado armónico y tipografía optimizada.
 
 ---
 

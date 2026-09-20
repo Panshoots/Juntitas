@@ -8,7 +8,8 @@ import {
   TextInput, 
   Modal, 
   ScrollView, 
-  RefreshControl 
+  RefreshControl,
+  ActivityIndicator 
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -92,20 +93,29 @@ export const SuperAdminPanelScreen: React.FC = () => {
   }, []);
 
   const loadAllCrmData = async () => {
+    const startTime = Date.now();
     setLoading(true);
-    const [uData, reqData, commData, auditData, evData] = await Promise.all([
-      getUsersFromDb(),
-      getCommunityRequests(),
-      getCommunities(),
-      getAuditLogs(),
-      getEvents()
-    ]);
-    setUsers(uData);
-    setCommunityRequests(reqData);
-    setCommunities(commData);
-    setAuditLogs(auditData);
-    setEvents(evData);
-    setLoading(false);
+    try {
+      const [uData, reqData, commData, auditData, evData] = await Promise.all([
+        getUsersFromDb(),
+        getCommunityRequests(),
+        getCommunities(),
+        getAuditLogs(),
+        getEvents()
+      ]);
+      setUsers(uData);
+      setCommunityRequests(reqData);
+      setCommunities(commData);
+      setAuditLogs(auditData);
+      setEvents(evData);
+    } catch (e) {
+      console.warn('Error cargando datos del CRM:', e);
+    } finally {
+      const elapsed = Date.now() - startTime;
+      const minDelay = Math.max(0, 400 - elapsed);
+      if (minDelay > 0) await new Promise(r => setTimeout(r, minDelay));
+      setLoading(false);
+    }
   };
 
   // Acciones de Usuario
@@ -288,15 +298,21 @@ export const SuperAdminPanelScreen: React.FC = () => {
     <View style={[styles.container, { paddingTop: insets.top }]}>
       {/* Cabecera CRM */}
       <View style={styles.header}>
-        <View>
+        <View style={{ flex: 1, paddingRight: 10 }}>
           <View style={styles.badgeAdmin}>
-            <Ionicons name="shield-checkmark" size={14} color="#EF4444" />
-            <Text style={styles.badgeAdminText}>Super Admin: Francisco Juillet</Text>
+            <Ionicons name="shield-checkmark" size={13} color="#DC2626" />
+            <Text style={styles.badgeAdminText}>SUPER ADMIN • FRANCISCO JUILLET</Text>
           </View>
           <Text style={styles.title}>Panel CRM & Control Global</Text>
+          <Text style={styles.subtitle}>Supervisión integral de usuarios, comunidades, juntas y auditoría</Text>
         </View>
 
-        <TouchableOpacity style={styles.reloadBtn} onPress={loadAllCrmData}>
+        <TouchableOpacity 
+          style={styles.reloadBtn} 
+          onPress={loadAllCrmData}
+          disabled={loading}
+          activeOpacity={0.8}
+        >
           <Ionicons name="refresh" size={18} color="#0284C7" />
         </TouchableOpacity>
       </View>
@@ -307,6 +323,7 @@ export const SuperAdminPanelScreen: React.FC = () => {
           style={[styles.dbActionBtn, styles.dbResetBtn]} 
           onPress={handleResetApp}
           disabled={loading}
+          activeOpacity={0.8}
         >
           <Ionicons name="trash-bin" size={15} color="#DC2626" />
           <Text style={styles.dbResetText}>Vaciar Toda la App</Text>
@@ -316,58 +333,101 @@ export const SuperAdminPanelScreen: React.FC = () => {
           style={[styles.dbActionBtn, styles.dbSeedBtn]} 
           onPress={handleSeedData}
           disabled={loading}
+          activeOpacity={0.8}
         >
           <Ionicons name="sparkles" size={15} color="#15803D" />
           <Text style={styles.dbSeedText}>Poblar 10 Usuarios & 4 Tiendas</Text>
         </TouchableOpacity>
       </View>
 
-      {/* Selector de Pestañas CRM */}
-      <View style={styles.tabsRow}>
+      {/* Selector de Pestañas CRM con scroll horizontal suave */}
+      <ScrollView 
+        horizontal 
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={styles.tabsScrollContent}
+        style={styles.tabsScrollView}
+      >
         <TouchableOpacity 
           style={[styles.tabBtn, activeTab === 'users' && styles.tabBtnActive]}
           onPress={() => setActiveTab('users')}
+          activeOpacity={0.8}
         >
-          <Ionicons name="people" size={16} color={activeTab === 'users' ? '#FFFFFF' : '#64748B'} />
+          <Ionicons name="people" size={16} color={activeTab === 'users' ? '#FFFFFF' : '#0284C7'} />
           <Text style={[styles.tabBtnText, activeTab === 'users' && styles.tabBtnTextActive]}>
-            Usuarios ({users.length})
+            Usuarios
           </Text>
+          <View style={[styles.tabCountBadge, activeTab === 'users' && styles.tabCountBadgeActive]}>
+            <Text style={[styles.tabCountText, activeTab === 'users' && styles.tabCountTextActive]}>
+              {users.length}
+            </Text>
+          </View>
         </TouchableOpacity>
 
         <TouchableOpacity 
           style={[styles.tabBtn, activeTab === 'communities' && styles.tabBtnActive]}
           onPress={() => setActiveTab('communities')}
+          activeOpacity={0.8}
         >
-          <Ionicons name="paw" size={16} color={activeTab === 'communities' ? '#FFFFFF' : '#64748B'} />
+          <Ionicons name="paw" size={16} color={activeTab === 'communities' ? '#FFFFFF' : '#D97706'} />
           <Text style={[styles.tabBtnText, activeTab === 'communities' && styles.tabBtnTextActive]}>
-            Comunidades ({communities.length})
+            Comunidades
           </Text>
+          <View style={[styles.tabCountBadge, activeTab === 'communities' && styles.tabCountBadgeActive]}>
+            <Text style={[styles.tabCountText, activeTab === 'communities' && styles.tabCountTextActive]}>
+              {communities.length}
+            </Text>
+          </View>
         </TouchableOpacity>
 
         <TouchableOpacity 
           style={[styles.tabBtn, activeTab === 'events' && styles.tabBtnActive]}
           onPress={() => setActiveTab('events')}
+          activeOpacity={0.8}
         >
-          <Ionicons name="calendar" size={16} color={activeTab === 'events' ? '#FFFFFF' : '#64748B'} />
+          <Ionicons name="calendar" size={16} color={activeTab === 'events' ? '#FFFFFF' : '#0284C7'} />
           <Text style={[styles.tabBtnText, activeTab === 'events' && styles.tabBtnTextActive]}>
-            Juntas ({events.length})
+            Juntas
           </Text>
+          <View style={[styles.tabCountBadge, activeTab === 'events' && styles.tabCountBadgeActive]}>
+            <Text style={[styles.tabCountText, activeTab === 'events' && styles.tabCountTextActive]}>
+              {events.length}
+            </Text>
+          </View>
         </TouchableOpacity>
 
         <TouchableOpacity 
           style={[styles.tabBtn, activeTab === 'audit' && styles.tabBtnActive]}
           onPress={() => setActiveTab('audit')}
+          activeOpacity={0.8}
         >
           <Ionicons name="document-text" size={16} color={activeTab === 'audit' ? '#FFFFFF' : '#64748B'} />
           <Text style={[styles.tabBtnText, activeTab === 'audit' && styles.tabBtnTextActive]}>
-            Auditoría ({auditLogs.length})
+            Auditoría
           </Text>
+          <View style={[styles.tabCountBadge, activeTab === 'audit' && styles.tabCountBadgeActive]}>
+            <Text style={[styles.tabCountText, activeTab === 'audit' && styles.tabCountTextActive]}>
+              {auditLogs.length}
+            </Text>
+          </View>
         </TouchableOpacity>
-      </View>
+      </ScrollView>
 
-      {/* CONTENIDO PESTAÑA: CRM DE USUARIOS */}
-      {activeTab === 'users' && (
-        <View style={{ flex: 1 }}>
+      {/* EXPERIENCIA DE CARGA REAL DEL CRM */}
+      {loading ? (
+        <View style={styles.crmLoadingContainer}>
+          <View style={styles.crmSpinnerCircle}>
+            <ActivityIndicator size="large" color="#0284C7" />
+          </View>
+          <Text style={styles.crmLoadingTitle}>Sincronizando Panel CRM...</Text>
+          <Text style={styles.crmLoadingSub}>
+            Consultando usuarios, comunidades, juntas y registros de auditoría en tiempo real 🛡️
+          </Text>
+        </View>
+      ) : (
+        <>
+          {/* CONTENIDO PESTAÑA: CRM DE USUARIOS */}
+          {activeTab === 'users' && (
+            <View style={{ flex: 1 }}>
           {/* Barra de búsqueda y Filtros */}
           <View style={styles.searchBox}>
             <Ionicons name="search" size={18} color="#94A3B8" />
@@ -480,7 +540,7 @@ export const SuperAdminPanelScreen: React.FC = () => {
                       style={styles.actionBtnRole} 
                       onPress={() => {
                         setSelectedUser(item);
-                        setSelectedNewRole(item.roleType);
+                        setSelectedNewRole(item.roleType || 'member');
                         setShowRoleModal(true);
                       }}
                     >
@@ -777,13 +837,15 @@ export const SuperAdminPanelScreen: React.FC = () => {
                   {item.timestamp?.toLocaleDateString ? item.timestamp.toLocaleDateString() : 'Hoy'}
                 </Text>
               </View>
-              <Text style={styles.auditReason}>{item.reason}</Text>
+              <Text style={styles.auditReason}>{item.details?.reason || (item as any).reason || 'Acción administrativa registrada'}</Text>
               <Text style={styles.auditMeta}>
-                Actor: {item.actorUserId} • Entidad: {item.entityType}/{item.entityId}
+                Actor: {item.actorUserId} • Entidad: {item.targetEntityType || (item as any).entityType}/{item.targetEntityId || (item as any).entityId}
               </Text>
             </View>
           )}
         />
+      )}
+        </>
       )}
 
       {/* MODAL: SUSPENDER USUARIO CON MOTIVO OBLIGATORIO (R-2401) */}
@@ -1029,8 +1091,9 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingHorizontal: 20,
-    paddingTop: 10,
-    marginBottom: 12,
+    paddingTop: 14,
+    paddingBottom: 8,
+    marginBottom: 8,
   },
   badgeAdmin: {
     flexDirection: 'row',
@@ -1044,51 +1107,92 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
   badgeAdminText: {
-    fontSize: 11,
-    fontWeight: '800',
+    fontSize: 10,
+    fontWeight: '900',
     color: '#B91C1C',
+    letterSpacing: 0.5,
   },
   title: {
-    fontSize: 20,
+    fontSize: 22,
     fontWeight: '900',
     color: '#0F172A',
+    letterSpacing: -0.5,
+  },
+  subtitle: {
+    fontSize: 12,
+    color: '#64748B',
+    marginTop: 2,
   },
   reloadBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     backgroundColor: '#E0F2FE',
     alignItems: 'center',
     justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: '#BAE6FD',
   },
-  tabsRow: {
-    flexDirection: 'row',
-    paddingHorizontal: 20,
-    gap: 8,
+  tabsScrollView: {
+    maxHeight: 52,
     marginBottom: 12,
   },
+  tabsScrollContent: {
+    paddingHorizontal: 20,
+    gap: 8,
+    alignItems: 'center',
+  },
   tabBtn: {
-    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: '#FFFFFF',
-    paddingVertical: 10,
-    borderRadius: 12,
+    paddingVertical: 9,
+    paddingHorizontal: 14,
+    borderRadius: 20,
     gap: 6,
     borderWidth: 1,
     borderColor: '#E2E8F0',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.03,
+    shadowRadius: 3,
+    elevation: 1,
   },
   tabBtnActive: {
     backgroundColor: '#0284C7',
     borderColor: '#0284C7',
+    shadowColor: '#0284C7',
+    shadowOpacity: 0.2,
+    shadowRadius: 6,
+    elevation: 3,
   },
   tabBtnText: {
-    fontSize: 12,
+    fontSize: 13,
     fontWeight: '700',
-    color: '#64748B',
+    color: '#475569',
   },
   tabBtnTextActive: {
+    color: '#FFFFFF',
+  },
+  tabCountBadge: {
+    backgroundColor: '#F1F5F9',
+    paddingHorizontal: 6,
+    paddingVertical: 1,
+    borderRadius: 10,
+    minWidth: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  tabCountBadgeActive: {
+    backgroundColor: 'rgba(255, 255, 255, 0.25)',
+  },
+  tabCountText: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#64748B',
+  },
+  tabCountTextActive: {
     color: '#FFFFFF',
   },
   searchBox: {
@@ -1621,20 +1725,28 @@ const styles = StyleSheet.create({
   },
   databaseToolbar: {
     flexDirection: 'row',
-    gap: 10,
+    gap: 12,
     paddingHorizontal: 16,
-    paddingBottom: 12,
+    paddingVertical: 10,
+    backgroundColor: '#FFFFFF',
+    borderBottomWidth: 1,
+    borderBottomColor: '#F1F5F9',
   },
   dbActionBtn: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 6,
-    paddingVertical: 10,
+    gap: 8,
+    paddingVertical: 11,
     paddingHorizontal: 12,
-    borderRadius: 12,
+    borderRadius: 14,
     borderWidth: 1.5,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 1,
   },
   dbResetBtn: {
     backgroundColor: '#FEF2F2',
@@ -1644,6 +1756,7 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '700',
     color: '#DC2626',
+    letterSpacing: -0.2,
   },
   dbSeedBtn: {
     backgroundColor: '#F0FDF4',
@@ -1653,6 +1766,40 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '700',
     color: '#15803D',
+    letterSpacing: -0.2,
+  },
+  crmLoadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingVertical: 90,
+    paddingHorizontal: 24,
+  },
+  crmSpinnerCircle: {
+    width: 68,
+    height: 68,
+    borderRadius: 34,
+    backgroundColor: '#E0F2FE',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 16,
+    borderWidth: 2,
+    borderColor: '#BAE6FD',
+  },
+  crmLoadingTitle: {
+    fontSize: 17,
+    fontWeight: '800',
+    color: '#0F172A',
+    marginBottom: 6,
+    textAlign: 'center',
+  },
+  crmLoadingSub: {
+    fontSize: 13,
+    color: '#64748B',
+    textAlign: 'center',
+    maxWidth: 320,
+    lineHeight: 19,
   },
 });
+
 

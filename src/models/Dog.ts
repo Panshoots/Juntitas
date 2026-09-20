@@ -21,7 +21,7 @@ export interface Dog {
   gender: DogGender;
   size: DogSize;
   description?: string;
-  personalityTraits: string[]; // Ej: ['sociable', 'juguetón', 'tranquilo', 'enérgico']
+  personalityTraits?: string[]; // Ej: ['sociable', 'juguetón', 'tranquilo', 'enérgico']
   photoUrls: string[];
   passport: DogPassport;
   createdAt: any;

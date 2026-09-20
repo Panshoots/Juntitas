@@ -39,13 +39,14 @@ export interface Community {
   websiteUrl?: string;
   region: string;
   comuna: string;
-  approximateMembers: number;
+  approximateMembers?: number;
   isVerified: boolean; // Insignia de verificación de identidad externa
-  creatorId: string;
+  creatorId?: string;
   primaryAdminId: string;
   secondaryAdmins?: SecondaryAdminInfo[];
   status: CommunityStatus;
-  membersCount: number;
+  membersCount?: number;
+  joinType?: string;
   members?: string[];
   eventsCount: number;
   createdAt: any;

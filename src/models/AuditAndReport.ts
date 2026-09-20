@@ -29,16 +29,21 @@ export type AuditActionType =
   | 'user_suspended'
   | 'user_banned'
   | 'content_moderated'
-  | 'event_force_cancelled';
+  | 'event_force_cancelled'
+  | (string & {});
 
 export interface AuditLog {
   id: string;
   actorUserId: string;
-  actorName: string;
-  actorRole: 'super_admin' | 'primary_admin';
+  actorName?: string;
+  actorRole?: 'super_admin' | 'primary_admin' | string;
   action: AuditActionType;
-  targetEntityType: string;
-  targetEntityId: string;
-  details: Record<string, any>;
+  targetEntityType?: string;
+  targetEntityId?: string;
+  entityType?: string;
+  entityId?: string;
+  reason?: string;
+  details?: Record<string, any>;
+  metadata?: Record<string, any>;
   timestamp: any;
 }

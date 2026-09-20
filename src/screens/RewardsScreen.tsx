@@ -44,10 +44,19 @@ export const RewardsScreen: React.FC = () => {
   const [refreshing, setRefreshing] = useState(false);
 
   const loadRewards = async () => {
+    const startTime = Date.now();
     setLoading(true);
-    const data = await getRewardsFromDb(activeTab);
-    setRewardsList(data);
-    setLoading(false);
+    try {
+      const data = await getRewardsFromDb(activeTab);
+      setRewardsList(data);
+    } catch (e) {
+      console.warn('Error cargando recompensas:', e);
+    } finally {
+      const elapsed = Date.now() - startTime;
+      const minDelay = Math.max(0, 350 - elapsed);
+      if (minDelay > 0) await new Promise(r => setTimeout(r, minDelay));
+      setLoading(false);
+    }
   };
 
   const handleRefresh = async () => {
@@ -113,9 +122,12 @@ export const RewardsScreen: React.FC = () => {
       </View>
 
       {loading ? (
-        <View style={styles.loadingBox}>
-          <ActivityIndicator size="large" color="#0284C7" />
-          <Text style={styles.loadingText}>Cargando catálogo oficial...</Text>
+        <View style={styles.loadingContainer}>
+          <View style={styles.loadingSpinnerCircle}>
+            <ActivityIndicator size="large" color="#0284C7" />
+          </View>
+          <Text style={styles.loadingTitle}>Cargando Tienda de Huellitas...</Text>
+          <Text style={styles.loadingSubtitle}>Consultando catálogo, premios y comercios verificados 🐾</Text>
         </View>
       ) : (
         <FlatList
@@ -469,15 +481,35 @@ const styles = StyleSheet.create({
   stockTextOut: {
     color: '#B91C1C',
   },
-  loadingBox: {
-    paddingVertical: 60,
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingVertical: 80,
+    paddingHorizontal: 24,
+  },
+  loadingSpinnerCircle: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: '#E0F2FE',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 12,
+    marginBottom: 16,
   },
-  loadingText: {
+  loadingTitle: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: '#0F172A',
+    marginBottom: 6,
+    textAlign: 'center',
+  },
+  loadingSubtitle: {
     fontSize: 13,
     color: '#64748B',
+    textAlign: 'center',
+    maxWidth: 280,
+    lineHeight: 18,
   },
   emptyContainer: {
     paddingVertical: 50,

@@ -29,7 +29,7 @@ export const RoleSwitcherBar: React.FC = () => {
       <View style={[styles.barContainer, { borderBottomColor: activeProfile.roleColor }]}>
         <View style={styles.leftInfo}>
           <View style={[styles.roleBadge, { backgroundColor: activeProfile.roleColor }]}>
-            <Ionicons name={getRoleIcon(currentUser.roleType)} size={13} color="#FFFFFF" />
+            <Ionicons name={getRoleIcon(currentUser.roleType || 'member')} size={13} color="#FFFFFF" />
             <Text style={styles.roleBadgeText}>{activeProfile.roleLabel}</Text>
           </View>
           <Text style={styles.userNameText} numberOfLines={1}>

@@ -75,7 +75,7 @@ export const BusinessPortalScreen: React.FC = () => {
 
   const handleRefresh = async () => {
     setRefreshing(true);
-    await loadBusinesses();
+    await loadStoreData();
     setRefreshing(false);
   };
 

@@ -1,10 +1,12 @@
 export type BusinessCategory = 
   | 'alimentos' 
+  | 'alimento'
   | 'accesorios' 
   | 'salud_veterinaria' 
   | 'adiestramiento' 
   | 'pasteleria' 
   | 'paseo_guarderia' 
+  | 'spa_bano'
   | 'otro';
 
 export type BusinessPlan = 'free' | 'pro';

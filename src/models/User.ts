@@ -37,7 +37,7 @@ export interface AppUser {
   displayName: string;
   photoURL: string | null;
   bio?: string;
-  roleType: UserRole;
+  roleType?: UserRole;
   filterProfileType?: 'tutor' | 'community_admin' | 'business';
   requestedCommunityName?: string;
   requestedBusinessName?: string;
@@ -45,7 +45,7 @@ export interface AppUser {
   contact?: UserContact;
   privacy: UserPrivacySettings;
   pawBalance: number;
-  isSuperAdmin: boolean;
+  isSuperAdmin?: boolean;
   status: UserStatus;
   suspendedReason?: string;
   createdAt: any;

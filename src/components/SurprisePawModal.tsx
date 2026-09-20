@@ -57,9 +57,9 @@ export const SurprisePawModal: React.FC<Props> = ({
                 <Animatable.Text
                   key={index}
                   animation={{
-                    from: { translateY: -40, opacity: 1, rotate: '0deg' },
-                    to: { translateY: Dimensions.get('window').height * 0.8, opacity: 0, rotate: '360deg' }
-                  }}
+                    from: { translateY: -40, opacity: 1 },
+                    to: { translateY: Dimensions.get('window').height * 0.8, opacity: 0 }
+                  } as any}
                   iterationCount="infinite"
                   duration={2200}
                   delay={delay}

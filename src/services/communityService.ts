@@ -70,7 +70,7 @@ export const getCommunityRequests = async (): Promise<CommunityRequest[]> => {
           comuna: data.comuna || 'Santiago',
           approximateSize: data.approximateSize || 50,
           status: data.status || 'pending',
-          adminReviewNotes: data.adminReviewNotes,
+          feedbackNote: data.feedbackNote || data.adminReviewNotes,
           createdAt: data.createdAt?.toDate ? data.createdAt.toDate() : new Date()
         });
       });
@@ -126,9 +126,8 @@ export const approveCommunityRequest = async (
     instagramHandle: req ? req.instagramHandle : '@comunidad.perruna',
     region: req ? req.region : 'Metropolitana',
     comuna: req ? req.comuna : 'Santiago',
-    status: 'activa',
+    status: 'active',
     isVerified: true,
-    joinType: 'libre',
     membersCount: 1,
     eventsCount: 0,
     primaryAdminId: req ? req.applicantId : adminUserId,
@@ -193,7 +192,7 @@ export const rejectCommunityRequest = async (
   const req = localRequests.find(r => r.id === requestId);
   if (req) {
     req.status = 'rejected';
-    req.adminReviewNotes = reason;
+    req.feedbackNote = reason;
   }
 
   await logAuditAction(
@@ -224,10 +223,10 @@ export const getCommunities = async (): Promise<Community[]> => {
           instagramHandle: data.instagramHandle || '',
           region: data.region || 'Metropolitana',
           comuna: data.comuna || 'Santiago',
-          status: data.status || 'activa',
+          status: (data.status === 'activa' ? 'active' : (data.status || 'active')),
           isVerified: !!data.isVerified,
-          joinType: data.joinType || 'libre',
           membersCount: data.membersCount || 1,
+          approximateMembers: data.approximateMembers || data.membersCount || 1,
           members: data.members || (data.primaryAdminId ? [data.primaryAdminId] : []),
           eventsCount: data.eventsCount || 0,
           primaryAdminId: data.primaryAdminId || '',
@@ -282,7 +281,7 @@ export const joinCommunity = async (communityId: string, userId: string): Promis
   }
 
   comm.members.push(userId);
-  comm.membersCount += 1;
+  comm.membersCount = (comm.membersCount || 0) + 1;
   return { success: true, message: '¡Te has unido exitosamente a ' + comm.name + '!' };
 };
 
@@ -308,10 +307,10 @@ export const createOfficialCommunity = async (
     instagramHandle: communityData.instagramHandle || '@juntitas.app',
     region: communityData.region || 'Metropolitana',
     comuna: communityData.comuna || 'Santiago',
-    status: 'activa',
+    status: 'active',
     isVerified: true,
-    joinType: 'libre',
     membersCount: 1,
+    approximateMembers: 1,
     eventsCount: 0,
     primaryAdminId: communityData.primaryAdminId,
     secondaryAdmins: [],

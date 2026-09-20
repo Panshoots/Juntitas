@@ -197,16 +197,19 @@ export const HomeScreen: React.FC = () => {
         >
           <View style={styles.adminBannerLeft}>
             <View style={styles.adminShieldCircle}>
-              <Ionicons name="shield-checkmark" size={20} color="#EF4444" />
+              <Ionicons name="shield-checkmark" size={18} color="#EF4444" />
             </View>
-            <View style={{ flex: 1, paddingRight: 6 }}>
-              <Text style={styles.adminBannerTitle} numberOfLines={1}>Super Admin: Francisco Juillet</Text>
-              <Text style={styles.adminBannerSubtitle} numberOfLines={1}>Toca aquí para abrir el Panel CRM Global</Text>
+            <View style={{ flex: 1, paddingRight: 4 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                <Text style={styles.adminBadgeSmall}>SUPER ADMIN</Text>
+                <Text style={styles.adminBannerTitle} numberOfLines={1}>Francisco Juillet</Text>
+              </View>
+              <Text style={styles.adminBannerSubtitle} numberOfLines={1}>Panel CRM & Control Global</Text>
             </View>
           </View>
           <View style={styles.adminOpenButton}>
             <Text style={styles.adminOpenText}>Abrir CRM</Text>
-            <Ionicons name="chevron-forward" size={14} color="#EF4444" />
+            <Ionicons name="chevron-forward" size={13} color="#EF4444" />
           </View>
         </TouchableOpacity>
       )}
@@ -526,12 +529,12 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: '#FEF3C7',
-    paddingHorizontal: 14,
-    paddingVertical: 8,
+    paddingHorizontal: 11,
+    paddingVertical: 7,
     borderRadius: 20,
     borderWidth: 1,
     borderColor: '#FDE68A',
-    gap: 6,
+    gap: 4,
   },
   pawsCount: {
     fontSize: 14,
@@ -617,32 +620,45 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
     gap: 12,
     marginBottom: 24,
+    justifyContent: 'space-between',
   },
   actionCard: {
     width: '48%',
     backgroundColor: '#FFFFFF',
-    borderRadius: 18,
-    padding: 16,
+    borderRadius: 20,
+    paddingVertical: 18,
+    paddingHorizontal: 12,
     borderWidth: 1,
     borderColor: '#E2E8F0',
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 8,
+    elevation: 2,
   },
   iconCircle: {
-    width: 48,
-    height: 48,
-    borderRadius: 14,
+    width: 52,
+    height: 52,
+    borderRadius: 16,
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: 10,
+    alignSelf: 'center',
   },
   actionTitle: {
-    fontSize: 15,
-    fontWeight: '700',
+    fontSize: 14,
+    fontWeight: '800',
     color: '#0F172A',
-    marginBottom: 2,
+    marginBottom: 4,
+    textAlign: 'center',
   },
   actionSub: {
     fontSize: 11,
     color: '#64748B',
+    textAlign: 'center',
+    lineHeight: 15,
   },
   featuredSection: {
     marginBottom: 20,
@@ -752,6 +768,16 @@ const styles = StyleSheet.create({
     backgroundColor: '#FEE2E2',
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  adminBadgeSmall: {
+    fontSize: 9,
+    fontWeight: '900',
+    color: '#DC2626',
+    backgroundColor: '#FEE2E2',
+    paddingHorizontal: 5,
+    paddingVertical: 1,
+    borderRadius: 4,
+    letterSpacing: 0.5,
   },
   adminBannerTitle: {
     fontSize: 13,

@@ -69,7 +69,7 @@ export const getEvents = async (communityId?: string): Promise<DogEvent[]> => {
           changeLogs: [],
           photosAlbum: [],
           createdAt: data.createdAt?.toDate ? data.createdAt.toDate() : new Date()
-        });
+        } as unknown as DogEvent);
       });
     }
     localEvents = list;
@@ -143,7 +143,7 @@ export const createEvent = async (
 
   localEvents.unshift(newEvent);
   await logAuditAction(
-    eventData.creatorUserId,
+    eventData.creatorUserId || 'system',
     'EVENT_CREATE',
     'events',
     newEvent.id,

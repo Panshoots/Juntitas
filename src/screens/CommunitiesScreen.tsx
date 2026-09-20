@@ -9,7 +9,8 @@ import {
   TouchableOpacity, 
   TextInput, 
   Modal, 
-  RefreshControl 
+  RefreshControl,
+  ActivityIndicator 
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -118,13 +119,29 @@ export const CommunitiesScreen: React.FC = () => {
 
   const canModerate = isSuperAdmin || activeProfile.roleType === 'primary_admin' || activeProfile.roleType === 'secondary_admin';
 
+  const [loading, setLoading] = useState(true);
+
   useEffect(() => {
-    loadCommunities();
-    loadPhotos();
+    loadInitialData();
     getChileRegions().then(list => {
       if (list && list.length > 0) setRegionsList(list);
     }).catch(err => console.warn('Error cargando regiones:', err));
   }, []);
+
+  const loadInitialData = async () => {
+    const startTime = Date.now();
+    setLoading(true);
+    try {
+      await Promise.all([loadCommunities(), loadPhotos()]);
+    } catch (e) {
+      console.warn('Error cargando datos de comunidades:', e);
+    } finally {
+      const elapsed = Date.now() - startTime;
+      const minDelay = Math.max(0, 350 - elapsed);
+      if (minDelay > 0) await new Promise(r => setTimeout(r, minDelay));
+      setLoading(false);
+    }
+  };
 
   const loadCommunities = async () => {
     const data = await getCommunities();
@@ -134,7 +151,9 @@ export const CommunitiesScreen: React.FC = () => {
   const loadPhotos = async () => {
     const canSeeBlocked = isSuperAdmin || activeProfile.roleType === 'primary_admin' || activeProfile.roleType === 'secondary_admin';
     const data = await getCommunityPhotos(undefined, canSeeBlocked);
-    setPhotos(data);
+    // Fotos aleatorias dinámicas de la comunidad para mostrar variedad
+    const randomized = [...data].sort(() => Math.random() - 0.5);
+    setPhotos(randomized);
   };
 
   const handleRefresh = async () => {
@@ -559,8 +578,15 @@ export const CommunitiesScreen: React.FC = () => {
         </TouchableOpacity>
       </View>
 
-      {/* Vista de Comunidades */}
-      {activeTab === 'communities' && (
+      {loading ? (
+        <View style={styles.loadingContainer}>
+          <View style={styles.loadingSpinnerCircle}>
+            <ActivityIndicator size="large" color="#0284C7" />
+          </View>
+          <Text style={styles.loadingTitle}>Cargando Manadas & Álbumes...</Text>
+          <Text style={styles.loadingSubtitle}>Sincronizando comunidades y fotos caninas en tiempo real 🐾</Text>
+        </View>
+      ) : activeTab === 'communities' ? (
         <>
           <View style={styles.searchBar}>
             <Ionicons name="search" size={20} color="#94A3B8" />
@@ -669,20 +695,27 @@ export const CommunitiesScreen: React.FC = () => {
             }}
           />
         </>
-      )}
-
-      {/* Vista de Álbum & Fotos Comunitarias */}
-      {activeTab === 'photos' && (
+      ) : (
+        /* Vista de Álbum & Fotos Comunitarias */
         <View style={{ flex: 1 }}>
-          {/* Botón para subir fotos */}
+          {/* Botón para subir fotos (exclusivo para Admins) o Banner Informativo para Miembros */}
           <View style={{ paddingHorizontal: 20, marginBottom: 12 }}>
-            <TouchableOpacity 
-              style={styles.uploadPhotoBtn}
-              onPress={() => setShowUploadModal(true)}
-            >
-              <Ionicons name="camera" size={18} color="#FFFFFF" />
-              <Text style={styles.uploadPhotoBtnText}>+ Compartir Foto de mi Perrito (+15 🐾)</Text>
-            </TouchableOpacity>
+            {(isSuperAdmin || activeProfile.roleType === 'primary_admin' || activeProfile.roleType === 'secondary_admin') ? (
+              <TouchableOpacity 
+                style={styles.uploadPhotoBtn}
+                onPress={() => setShowUploadModal(true)}
+              >
+                <Ionicons name="camera" size={18} color="#FFFFFF" />
+                <Text style={styles.uploadPhotoBtnText}>+ Subir Foto Oficial de la Manada</Text>
+              </TouchableOpacity>
+            ) : (
+              <View style={styles.albumInfoBanner}>
+                <Ionicons name="sparkles" size={16} color="#0284C7" />
+                <Text style={styles.albumInfoText}>
+                  Álbum Oficial: Fotos aleatorias y seleccionadas de las manadas. ¡Reacciona con tu like a tus perritos favoritos! ❤️
+                </Text>
+              </View>
+            )}
           </View>
 
           <FlatList
@@ -749,7 +782,7 @@ export const CommunitiesScreen: React.FC = () => {
                   {/* Banner de Foto Bloqueada por Incumplimiento Legal */}
                   {item.status === 'blocked' && (
                     <View style={styles.photoBlockedBanner}>
-                      <Ionicons name="shield-alert" size={14} color="#B91C1C" />
+                      <Ionicons name="alert-circle" size={14} color="#B91C1C" />
                       <Text style={styles.photoBlockedBannerText} numberOfLines={2}>
                         Foto Bloqueada: {item.moderationReason || 'Incumplimiento legal o normativo.'}
                       </Text>
@@ -1247,7 +1280,7 @@ export const CommunitiesScreen: React.FC = () => {
                             {/* Banner de Foto Bloqueada por Incumplimiento Legal */}
                             {item.status === 'blocked' && (
                               <View style={styles.photoBlockedBanner}>
-                                <Ionicons name="shield-alert" size={14} color="#B91C1C" />
+                                <Ionicons name="alert-circle" size={14} color="#B91C1C" />
                                 <Text style={styles.photoBlockedBannerText} numberOfLines={2}>
                                   Foto Bloqueada: {item.moderationReason || 'Incumplimiento legal o normativo.'}
                                 </Text>
@@ -1720,7 +1753,7 @@ export const CommunitiesScreen: React.FC = () => {
           <View style={styles.modalCard}>
             <View style={styles.modalHeader}>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                <Ionicons name="shield-alert" size={20} color="#DC2626" />
+                <Ionicons name="alert-circle" size={20} color="#DC2626" />
                 <Text style={[styles.modalTitle, { color: '#DC2626' }]}>Bloquear Foto (Moderación Legal)</Text>
               </View>
               <TouchableOpacity onPress={() => setShowBlockPhotoModal(false)}>
@@ -2122,11 +2155,23 @@ const styles = StyleSheet.create({
     lineHeight: 16,
     marginBottom: 12,
   },
+  modalSub: {
+    fontSize: 13,
+    color: '#64748B',
+    lineHeight: 18,
+    marginBottom: 12,
+  },
   fieldLabel: {
     fontSize: 12,
     fontWeight: '700',
     color: '#334155',
     marginBottom: 4,
+  },
+  inputLabel: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#334155',
+    marginBottom: 6,
   },
   modalInput: {
     backgroundColor: '#F8FAFC',
@@ -2859,5 +2904,52 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontWeight: 'bold',
     fontSize: 14,
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingVertical: 80,
+    paddingHorizontal: 24,
+  },
+  loadingSpinnerCircle: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: '#E0F2FE',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 16,
+  },
+  loadingTitle: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: '#0F172A',
+    marginBottom: 6,
+    textAlign: 'center',
+  },
+  loadingSubtitle: {
+    fontSize: 13,
+    color: '#64748B',
+    textAlign: 'center',
+    maxWidth: 280,
+    lineHeight: 18,
+  },
+  albumInfoBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F0F9FF',
+    borderWidth: 1,
+    borderColor: '#BAE6FD',
+    borderRadius: 14,
+    padding: 12,
+    gap: 10,
+  },
+  albumInfoText: {
+    flex: 1,
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#0369A1',
+    lineHeight: 16,
   },
 });

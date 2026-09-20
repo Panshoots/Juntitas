@@ -80,13 +80,13 @@ export interface DogEvent {
   endDate: any;
   location: EventLocation;
   capacityLimit?: number | null;
-  rules: string[];
-  requirements: string[]; // Ej: ['Vacunas al día', 'Uso obligatorio de correa']
+  rules?: string[];
+  requirements?: string[]; // Ej: ['Vacunas al día', 'Uso obligatorio de correa']
   acceptsBusinesses: boolean;
   tutorsCount: number;
   dogsCount: number;
   attendeeUserIds?: string[];
-  organizerUserIds: string[];
+  organizerUserIds?: string[];
   changeLogs: EventChangeRecord[];
   photosAlbum: EventPhoto[];
   missions?: EventMission[];
