@@ -8,6 +8,7 @@ import {
   Platform 
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
+import { APP_VERSION } from '../services/appVersionService';
 
 export const SplashScreen: React.FC = () => {
   const scaleAnim = useRef(new Animated.Value(1)).current;
@@ -83,7 +84,7 @@ export const SplashScreen: React.FC = () => {
           <Text style={styles.footerBadgeIcon}>🐶</Text>
           <Text style={styles.footerBadgeText}>Vida social canina segura y organizada</Text>
         </View>
-        <Text style={styles.versionText}>Juntitas v1.0 • Hecho con cariño para la manada</Text>
+        <Text style={styles.versionText}>Juntitas v{APP_VERSION} • Hecho con cariño para la manada</Text>
       </View>
     </View>
   );

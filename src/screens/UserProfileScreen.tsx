@@ -26,6 +26,7 @@ import { getDogBreeds, DogBreed, MASTER_DOG_BREEDS } from '../services/breedServ
 import { takePhoto, pickFromGallery } from '../services/imagePickerService';
 import { useToast } from '../context/ToastContext';
 import { submitIdentityVerification, formatRutChile, validateRutChile } from '../services/identityService';
+import { APP_VERSION, BUILD_NUMBER, triggerAppRefresh } from '../services/appVersionService';
 
 interface OfficialBadgeInfo {
   id: string;
@@ -863,6 +864,32 @@ export const UserProfileScreen: React.FC = () => {
         <TouchableOpacity style={styles.logoutBtn} onPress={logout}>
           <Ionicons name="log-out" size={18} color="#EF4444" />
           <Text style={styles.logoutBtnText}>Cerrar Sesión de la Cuenta</Text>
+        </TouchableOpacity>
+      </View>
+
+      {/* Información de Versión y Sincronización Automática */}
+      <View style={styles.appVersionFooter}>
+        <View style={styles.appVersionBadgeRow}>
+          <Ionicons name="sparkles" size={14} color="#0284C7" />
+          <Text style={styles.appVersionText}>Juntitas v{APP_VERSION} (Build {BUILD_NUMBER})</Text>
+          <View style={styles.appVersionStatusDot} />
+          <Text style={styles.appVersionStatusText}>Online</Text>
+        </View>
+        <Text style={styles.appVersionSubText}>
+          Actualización y refresco automático activo • Hecho para la manada 🐾
+        </Text>
+        <TouchableOpacity 
+          style={styles.refreshAppBtn}
+          onPress={() => {
+            showToast('Sincronizando y refrescando app...', 'info');
+            setTimeout(() => {
+              triggerAppRefresh();
+            }, 400);
+          }}
+          activeOpacity={0.8}
+        >
+          <Ionicons name="reload" size={13} color="#0284C7" />
+          <Text style={styles.refreshAppBtnText}>Refrescar / Comprobar Cambios</Text>
         </TouchableOpacity>
       </View>
 
@@ -2626,5 +2653,67 @@ const styles = StyleSheet.create({
   kycScanStepTextActive: {
     color: '#0F172A',
     fontWeight: '700',
+  },
+  appVersionFooter: {
+    alignItems: 'center',
+    paddingVertical: 20,
+    paddingHorizontal: 20,
+    backgroundColor: '#FFFFFF',
+    marginHorizontal: 20,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    marginTop: 10,
+  },
+  appVersionBadgeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: '#F0F9FF',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#BAE6FD',
+  },
+  appVersionText: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: '#0284C7',
+  },
+  appVersionStatusDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#10B981',
+    marginLeft: 4,
+  },
+  appVersionStatusText: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#10B981',
+  },
+  appVersionSubText: {
+    fontSize: 11,
+    color: '#94A3B8',
+    marginTop: 8,
+    textAlign: 'center',
+  },
+  refreshAppBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1,
+    borderColor: '#CBD5E1',
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 10,
+    marginTop: 10,
+  },
+  refreshAppBtnText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#0284C7',
   },
 });
