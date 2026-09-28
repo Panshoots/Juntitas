@@ -47,6 +47,7 @@ export const PAW_ACTION_AMOUNTS: Record<PawActionType, number> = {
   event_attended: 100,
   mission_completed: 40,
   surprise_paw: 0,
+  account_verified: 50,
   redeem_digital: 0,
   redeem_coupon: 0,
   admin_adjustment: 0,

@@ -2088,7 +2088,15 @@ export const CommunitiesScreen: React.FC = () => {
                             style={styles.applicantAvatar} 
                           />
                           <View style={{ flex: 1, marginLeft: 10 }}>
-                            <Text style={styles.applicantName}>{applicant.user?.displayName || 'Tutor Canino'}</Text>
+                            <View style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 6 }}>
+                              <Text style={styles.applicantName}>{applicant.user?.displayName || 'Tutor Canino'}</Text>
+                              {applicant.user?.isIdentityVerified && (
+                                <View style={styles.verifiedKycBadge}>
+                                  <Ionicons name="shield-checkmark" size={10} color="#15803D" />
+                                  <Text style={styles.verifiedKycBadgeText}>Verificado</Text>
+                                </View>
+                              )}
+                            </View>
                             <Text style={styles.applicantMeta}>
                               📍 {applicant.user?.location?.comuna || 'Santiago'}, {applicant.user?.location?.region || 'Metropolitana'}
                             </Text>
@@ -2178,6 +2186,12 @@ export const CommunitiesScreen: React.FC = () => {
                           <View style={{ flex: 1, marginLeft: 10 }}>
                             <View style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 6 }}>
                               <Text style={styles.applicantName}>{member.user?.displayName || 'Tutor Canino'}</Text>
+                              {member.user?.isIdentityVerified && (
+                                <View style={styles.verifiedKycBadge}>
+                                  <Ionicons name="shield-checkmark" size={10} color="#15803D" />
+                                  <Text style={styles.verifiedKycBadgeText}>Verificado</Text>
+                                </View>
+                              )}
                               {member.isPrimaryAdmin && (
                                 <View style={styles.titularBadge}>
                                   <Ionicons name="ribbon" size={10} color="#B45309" />
@@ -4261,5 +4275,21 @@ const styles = StyleSheet.create({
   expelReasonChipTextActive: {
     color: '#B91C1C',
     fontWeight: '600',
+  },
+  verifiedKycBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#DCFCE7',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
+    gap: 3,
+    borderWidth: 1,
+    borderColor: '#BBF7D0',
+  },
+  verifiedKycBadgeText: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#15803D',
   },
 });

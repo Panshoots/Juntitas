@@ -790,8 +790,14 @@ export const EventsScreen: React.FC = () => {
                           style={styles.attendeeAvatar} 
                         />
                         <View style={{ flex: 1 }}>
-                          <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                          <View style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 6 }}>
                             <Text style={styles.attendeeName}>{currentUser.displayName} (Tú)</Text>
+                            {currentUser.isIdentityVerified && (
+                              <View style={styles.verifiedKycBadge}>
+                                <Ionicons name="shield-checkmark" size={11} color="#15803D" />
+                                <Text style={styles.verifiedKycBadgeText}>Verificado</Text>
+                              </View>
+                            )}
                             <View style={styles.myStatusBadge}>
                               <Text style={styles.myStatusBadgeText}>Confirmado ✅</Text>
                             </View>
@@ -816,6 +822,7 @@ export const EventsScreen: React.FC = () => {
                     name: 'Camila Valenzuela',
                     comuna: 'Providencia',
                     avatar: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=150',
+                    isVerified: true,
                     dogs: [
                       { name: 'Milo', breed: 'Golden Retriever', photo: 'https://images.unsplash.com/photo-1552053831-71594a27632d?w=200', role: 'Socializador y Juguetón' }
                     ]
@@ -825,6 +832,7 @@ export const EventsScreen: React.FC = () => {
                     name: 'Diego Silva',
                     comuna: 'Ñuñoa',
                     avatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150',
+                    isVerified: false,
                     dogs: [
                       { name: 'Bruno', breed: 'Beagle', photo: 'https://images.unsplash.com/photo-1537151608828-ea2b11777ee8?w=200', role: 'Explorador Curioso' }
                     ]
@@ -834,6 +842,7 @@ export const EventsScreen: React.FC = () => {
                     name: 'Macarena Fuenzalida',
                     comuna: 'Las Condes',
                     avatar: 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=150',
+                    isVerified: true,
                     dogs: [
                       { name: 'Simba', breed: 'Pug', photo: 'https://images.unsplash.com/photo-1517849845537-4d257902454a?w=200', role: 'Tranquilo y Regalón' },
                       { name: 'Kira', breed: 'Shih Tzu', photo: 'https://images.unsplash.com/photo-1583511655857-d19b40a7a54e?w=200', role: 'Cariñosa y Tímida' }
@@ -844,6 +853,7 @@ export const EventsScreen: React.FC = () => {
                     name: 'Jorge Alarcón',
                     comuna: 'Santiago Centro',
                     avatar: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=150',
+                    isVerified: false,
                     dogs: [
                       { name: 'Thor', breed: 'Pastor Alemán', photo: 'https://images.unsplash.com/photo-1589941013453-ec89f33b5455?w=200', role: 'Protector Noble' }
                     ]
@@ -853,6 +863,7 @@ export const EventsScreen: React.FC = () => {
                     name: 'Ignacia Morales',
                     comuna: 'La Reina',
                     avatar: 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?w=150',
+                    isVerified: true,
                     dogs: [
                       { name: 'Bella', breed: 'Border Collie', photo: 'https://images.unsplash.com/photo-1518717758536-85ae29035b6d?w=200', role: 'Ágil y Juguetona' }
                     ]
@@ -862,6 +873,7 @@ export const EventsScreen: React.FC = () => {
                     name: 'Felipe Navarro',
                     comuna: 'Vitacura',
                     avatar: 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=150',
+                    isVerified: false,
                     dogs: [
                       { name: 'Toby', breed: 'Jack Russell Terrier', photo: 'https://images.unsplash.com/photo-1543466835-00a7907e9de1?w=200', role: 'Veloz Corredor' }
                     ]
@@ -871,9 +883,15 @@ export const EventsScreen: React.FC = () => {
                     <View style={styles.attendeeHeaderRow}>
                       <Image source={{ uri: att.avatar }} style={styles.attendeeAvatar} />
                       <View style={{ flex: 1, marginLeft: 10 }}>
-                        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 6 }}>
                           <Text style={styles.attendeeName}>{att.name}</Text>
-                          <Ionicons name="checkmark-circle" size={14} color="#0284C7" style={{ marginLeft: 4 }} />
+                          {att.isVerified && (
+                            <View style={styles.verifiedKycBadge}>
+                              <Ionicons name="shield-checkmark" size={10} color="#15803D" />
+                              <Text style={styles.verifiedKycBadgeText}>Verificado</Text>
+                            </View>
+                          )}
+                          <Ionicons name="checkmark-circle" size={14} color="#0284C7" />
                         </View>
                         <Text style={styles.attendeeSubtitle}>Tutor Oficial • Comuna: {att.comuna}</Text>
                       </View>
@@ -2017,5 +2035,21 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     maxWidth: 280,
     lineHeight: 18,
+  },
+  verifiedKycBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#DCFCE7',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
+    gap: 3,
+    borderWidth: 1,
+    borderColor: '#BBF7D0',
+  },
+  verifiedKycBadgeText: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#15803D',
   },
 });

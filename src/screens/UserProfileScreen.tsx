@@ -16,7 +16,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useRoute } from '@react-navigation/native';
 import { useAuth } from '../context/AuthContext';
 import { DEFAULT_DOG_PHOTOS, MAX_DOGS_STANDARD_PLAN } from '../services/dogService';
 import { getUserRedemptions } from '../services/rewardService';
@@ -24,6 +24,7 @@ import { RewardRedemption } from '../models/Gamification';
 import { getDogBreeds, DogBreed, MASTER_DOG_BREEDS } from '../services/breedService';
 import { takePhoto, pickFromGallery } from '../services/imagePickerService';
 import { useToast } from '../context/ToastContext';
+import { submitIdentityVerification, formatRutChile, validateRutChile } from '../services/identityService';
 
 interface OfficialBadgeInfo {
   id: string;
@@ -104,12 +105,83 @@ const ALL_OFFICIAL_BADGES: OfficialBadgeInfo[] = [
 export const UserProfileScreen: React.FC = () => {
   const insets = useSafeAreaInsets();
   const navigation = useNavigation<any>();
-  const { activeProfile, currentUser, currentDogs, addDogToUser, updateUserPhoto, updateUserProfile, isSuperAdmin, isBusinessOwner, logout } = useAuth();
+  const route = useRoute<any>();
+  const { activeProfile, currentUser, currentDogs, addDogToUser, updateUserPhoto, updateUserProfile, refreshCurrentUser, isSuperAdmin, isBusinessOwner, logout } = useAuth();
   const { showToast } = useToast();
 
   const [showDogsPublic, setShowDogsPublic] = useState(true);
   const [showCommunitiesPublic, setShowCommunitiesPublic] = useState(true);
   const [showAttendancePublic, setShowAttendancePublic] = useState(true);
+
+  // Estados para Verificación de Identidad Oficial (KYC)
+  const [showIdentityModal, setShowIdentityModal] = useState(false);
+  const [idRut, setIdRut] = useState(currentUser.identityData?.rut || '');
+  const [idDocNumber, setIdDocNumber] = useState(currentUser.identityData?.documentNumber || '');
+  const [idFrontUrl, setIdFrontUrl] = useState(currentUser.identityData?.frontIdCardUrl || '');
+  const [idBackUrl, setIdBackUrl] = useState(currentUser.identityData?.backIdCardUrl || '');
+  const [idSelfieUrl, setIdSelfieUrl] = useState(currentUser.identityData?.selfieUrl || '');
+  const [submittingId, setSubmittingId] = useState(false);
+
+  useEffect(() => {
+    if (route.params?.openIdentityModal) {
+      setShowIdentityModal(true);
+    }
+  }, [route.params?.openIdentityModal]);
+
+  const handlePickIdFront = async (useCamera: boolean = false) => {
+    const res = useCamera ? await takePhoto() : await pickFromGallery();
+    if (res.success && res.uri) {
+      setIdFrontUrl(res.uri);
+      showToast('Foto frontal del carnet cargada', 'success');
+    }
+  };
+
+  const handlePickIdBack = async (useCamera: boolean = false) => {
+    const res = useCamera ? await takePhoto() : await pickFromGallery();
+    if (res.success && res.uri) {
+      setIdBackUrl(res.uri);
+      showToast('Foto dorsal del carnet cargada', 'success');
+    }
+  };
+
+  const handlePickIdSelfie = async (useCamera: boolean = false) => {
+    const res = useCamera ? await takePhoto() : await pickFromGallery();
+    if (res.success && res.uri) {
+      setIdSelfieUrl(res.uri);
+      showToast('Foto de seguridad / selfie cargada', 'success');
+    }
+  };
+
+  const handleSubmitIdentity = async () => {
+    if (!idRut.trim()) {
+      showToast('Por favor ingresa tu RUT.', 'warning');
+      return;
+    }
+    if (!validateRutChile(idRut)) {
+      showToast('El RUT ingresado no es válido (ej: 12.345.678-9).', 'error');
+      return;
+    }
+    if (!idFrontUrl || !idBackUrl) {
+      showToast('Debes adjuntar ambas fotos de tu carnet (frente y dorso).', 'warning');
+      return;
+    }
+
+    setSubmittingId(true);
+    const res = await submitIdentityVerification(currentUser.id, {
+      rut: idRut,
+      documentNumber: idDocNumber,
+      frontIdCardUrl: idFrontUrl,
+      backIdCardUrl: idBackUrl,
+      selfieUrl: idSelfieUrl || undefined
+    });
+    setSubmittingId(false);
+
+    showToast(res.message, res.success ? 'success' : 'error');
+    if (res.success) {
+      setShowIdentityModal(false);
+      await refreshCurrentUser();
+    }
+  };
 
   // Estados para Edición de Datos Personales
   const [showEditPersonalModal, setShowEditPersonalModal] = useState(false);
@@ -397,6 +469,90 @@ export const UserProfileScreen: React.FC = () => {
           </TouchableOpacity>
         </View>
       )}
+
+      {/* Tarjeta de Verificación de Identidad Oficial (KYC) */}
+      <View style={styles.section}>
+        <View style={styles.sectionHeaderRow}>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.sectionTitle}>🛡️ Verificación de Identidad Oficial</Text>
+            <Text style={styles.sectionSubtitle}>Acredita tu identidad real con cédula para máxima seguridad</Text>
+          </View>
+        </View>
+
+        {currentUser.identityStatus === 'verified' ? (
+          <View style={styles.kycVerifiedCard}>
+            <View style={styles.kycVerifiedHeader}>
+              <View style={styles.kycBadgeCircleVerified}>
+                <Ionicons name="shield-checkmark" size={24} color="#15803D" />
+              </View>
+              <View style={{ flex: 1, marginLeft: 12 }}>
+                <Text style={styles.kycVerifiedTitle}>Identidad Oficial Acreditada</Text>
+                <Text style={styles.kycVerifiedSub}>
+                  {currentUser.identityData?.rut ? `RUT: ${currentUser.identityData.rut} • ` : ''}Tutor Verificado Oficial
+                </Text>
+              </View>
+              <View style={styles.kycCheckPill}>
+                <Ionicons name="checkmark" size={14} color="#FFFFFF" />
+                <Text style={styles.kycCheckPillText}>Certificado</Text>
+              </View>
+            </View>
+            <Text style={styles.kycVerifiedDesc}>
+              Tu cuenta está respaldada por tu cédula de identidad. Esta insignia certifica confianza total para compartir en juntas y comunidades caninas.
+            </Text>
+          </View>
+        ) : currentUser.identityStatus === 'pending' ? (
+          <View style={styles.kycPendingCard}>
+            <View style={styles.kycPendingHeader}>
+              <View style={styles.kycBadgeCirclePending}>
+                <Ionicons name="time" size={24} color="#D97706" />
+              </View>
+              <View style={{ flex: 1, marginLeft: 12 }}>
+                <Text style={styles.kycPendingTitle}>Cédula en Proceso de Validación</Text>
+                <Text style={styles.kycPendingSub}>
+                  RUT: {currentUser.identityData?.rut || 'En revisión'}
+                </Text>
+              </View>
+              <View style={styles.kycPendingPill}>
+                <Text style={styles.kycPendingPillText}>En Revisión</Text>
+              </View>
+            </View>
+            <Text style={styles.kycPendingDesc}>
+              Tus fotografías y antecedentes fueron recibidos por el equipo de moderación oficial. Te notificaremos apenas sea certificada tu identidad.
+            </Text>
+          </View>
+        ) : (
+          <View style={styles.kycUnverifiedCard}>
+            <View style={styles.kycUnverifiedHeader}>
+              <View style={styles.kycBadgeCircleUnverified}>
+                <Ionicons name="shield-outline" size={24} color="#0284C7" />
+              </View>
+              <View style={{ flex: 1, marginLeft: 12 }}>
+                <Text style={styles.kycUnverifiedTitle}>
+                  {currentUser.identityStatus === 'rejected' ? 'Validación Requiere Reintento' : 'Valida tu Identidad con tu Carnet'}
+                </Text>
+                <Text style={styles.kycUnverifiedSub}>
+                  {currentUser.identityStatus === 'rejected' 
+                    ? (currentUser.identityData?.rejectionReason ? `Motivo: ${currentUser.identityData.rejectionReason}` : 'Sube nuevamente tus fotos')
+                    : 'Obtén la insignia de Tutor Verificado y +50 Huellitas'}
+                </Text>
+              </View>
+            </View>
+            <Text style={styles.kycUnverifiedDesc}>
+              Para cuidar a nuestra comunidad y evitar cuentas falsas o suplantaciones, te invitamos a validar tu cédula de identidad. Es rápido y 100% privado.
+            </Text>
+            <TouchableOpacity 
+              style={styles.kycActionBtn}
+              onPress={() => setShowIdentityModal(true)}
+              activeOpacity={0.88}
+            >
+              <Ionicons name="card" size={16} color="#FFFFFF" />
+              <Text style={styles.kycActionBtnText}>
+                {currentUser.identityStatus === 'rejected' ? 'Reenviar Fotos del Carnet' : 'Verificar mi Identidad con Carnet'}
+              </Text>
+            </TouchableOpacity>
+          </View>
+        )}
+      </View>
 
       {/* Zona de Datos Personales y Contacto */}
       <View style={styles.section}>
@@ -1033,6 +1189,160 @@ export const UserProfileScreen: React.FC = () => {
                 {savingPersonal ? 'Guardando cambios...' : 'Guardar Información'}
               </Text>
             </TouchableOpacity>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
+
+      {/* Modal de Verificación de Identidad con Carnet (KYC) */}
+      <Modal visible={showIdentityModal} transparent animationType="slide">
+        <KeyboardAvoidingView 
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          style={styles.modalOverlay}
+        >
+          <View style={[styles.modalCard, { maxHeight: '90%' }]}>
+            <View style={styles.modalHeader}>
+              <View style={{ flex: 1 }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                  <Ionicons name="shield-checkmark" size={20} color="#0284C7" />
+                  <Text style={styles.modalTitle}>Verificar Identidad con Carnet</Text>
+                </View>
+                <Text style={styles.modalSub}>Acredita que eres una persona real para mayor seguridad en la manada</Text>
+              </View>
+              <TouchableOpacity onPress={() => setShowIdentityModal(false)}>
+                <Ionicons name="close" size={24} color="#64748B" />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView showsVerticalScrollIndicator={false} style={{ width: '100%' }}>
+              {/* Información y RUT */}
+              <Text style={styles.fieldLabel}>RUT del Titular: *</Text>
+              <TextInput
+                placeholder="ej: 12.345.678-K"
+                value={idRut}
+                onChangeText={(text) => setIdRut(formatRutChile(text))}
+                style={styles.modalInput}
+                autoCapitalize="characters"
+                maxLength={12}
+              />
+
+              <Text style={styles.fieldLabel}>Número de Documento / Serie (opcional):</Text>
+              <TextInput
+                placeholder="ej: A123456789"
+                value={idDocNumber}
+                onChangeText={setIdDocNumber}
+                style={styles.modalInput}
+                autoCapitalize="characters"
+              />
+
+              {/* Foto 1: Frente del carnet */}
+              <Text style={[styles.fieldLabel, { marginTop: 12 }]}>1. Fotografía Frontal de tu Carnet: *</Text>
+              <Text style={styles.photoFieldHint}>Asegúrate de que tus nombres y RUT se lean con nitidez.</Text>
+              {idFrontUrl ? (
+                <View style={styles.idPreviewContainer}>
+                  <Image source={{ uri: idFrontUrl }} style={styles.idCardPreviewImage} />
+                  <View style={styles.idPreviewActions}>
+                    <TouchableOpacity style={styles.idRetakeBtn} onPress={() => handlePickIdFront(true)}>
+                      <Ionicons name="camera" size={14} color="#0284C7" />
+                      <Text style={styles.idRetakeText}>Cámara</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity style={styles.idRetakeBtn} onPress={() => handlePickIdFront(false)}>
+                      <Ionicons name="image" size={14} color="#0284C7" />
+                      <Text style={styles.idRetakeText}>Galería</Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              ) : (
+                <View style={styles.idUploadButtonsRow}>
+                  <TouchableOpacity style={styles.idUploadBtn} onPress={() => handlePickIdFront(true)}>
+                    <Ionicons name="camera-outline" size={20} color="#0284C7" />
+                    <Text style={styles.idUploadBtnText}>Tomar Foto</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity style={styles.idUploadBtn} onPress={() => handlePickIdFront(false)}>
+                    <Ionicons name="images-outline" size={20} color="#0284C7" />
+                    <Text style={styles.idUploadBtnText}>Subir de Galería</Text>
+                  </TouchableOpacity>
+                </View>
+              )}
+
+              {/* Foto 2: Dorso del carnet */}
+              <Text style={[styles.fieldLabel, { marginTop: 16 }]}>2. Fotografía Posterior (Dorso) del Carnet: *</Text>
+              <Text style={styles.photoFieldHint}>Donde se encuentra la huella y el código del documento.</Text>
+              {idBackUrl ? (
+                <View style={styles.idPreviewContainer}>
+                  <Image source={{ uri: idBackUrl }} style={styles.idCardPreviewImage} />
+                  <View style={styles.idPreviewActions}>
+                    <TouchableOpacity style={styles.idRetakeBtn} onPress={() => handlePickIdBack(true)}>
+                      <Ionicons name="camera" size={14} color="#0284C7" />
+                      <Text style={styles.idRetakeText}>Cámara</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity style={styles.idRetakeBtn} onPress={() => handlePickIdBack(false)}>
+                      <Ionicons name="image" size={14} color="#0284C7" />
+                      <Text style={styles.idRetakeText}>Galería</Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              ) : (
+                <View style={styles.idUploadButtonsRow}>
+                  <TouchableOpacity style={styles.idUploadBtn} onPress={() => handlePickIdBack(true)}>
+                    <Ionicons name="camera-outline" size={20} color="#0284C7" />
+                    <Text style={styles.idUploadBtnText}>Tomar Foto</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity style={styles.idUploadBtn} onPress={() => handlePickIdBack(false)}>
+                    <Ionicons name="images-outline" size={20} color="#0284C7" />
+                    <Text style={styles.idUploadBtnText}>Subir de Galería</Text>
+                  </TouchableOpacity>
+                </View>
+              )}
+
+              {/* Foto 3: Selfie de comprobación */}
+              <Text style={[styles.fieldLabel, { marginTop: 16 }]}>3. Selfie de Verificación (Comprobación Humana):</Text>
+              <Text style={styles.photoFieldHint}>Una foto clara de tu rostro o sosteniendo tu carnet para contrastar la identidad.</Text>
+              {idSelfieUrl ? (
+                <View style={styles.idPreviewContainer}>
+                  <Image source={{ uri: idSelfieUrl }} style={styles.idCardPreviewImage} />
+                  <View style={styles.idPreviewActions}>
+                    <TouchableOpacity style={styles.idRetakeBtn} onPress={() => handlePickIdSelfie(true)}>
+                      <Ionicons name="camera" size={14} color="#0284C7" />
+                      <Text style={styles.idRetakeText}>Cámara</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity style={styles.idRetakeBtn} onPress={() => handlePickIdSelfie(false)}>
+                      <Ionicons name="image" size={14} color="#0284C7" />
+                      <Text style={styles.idRetakeText}>Galería</Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              ) : (
+                <View style={styles.idUploadButtonsRow}>
+                  <TouchableOpacity style={styles.idUploadBtn} onPress={() => handlePickIdSelfie(true)}>
+                    <Ionicons name="camera-outline" size={20} color="#0284C7" />
+                    <Text style={styles.idUploadBtnText}>Tomar Selfie</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity style={styles.idUploadBtn} onPress={() => handlePickIdSelfie(false)}>
+                    <Ionicons name="images-outline" size={20} color="#0284C7" />
+                    <Text style={styles.idUploadBtnText}>Subir de Galería</Text>
+                  </TouchableOpacity>
+                </View>
+              )}
+
+              {/* Aviso de privacidad y confidencialidad */}
+              <View style={styles.privacyNoticeCard}>
+                <Ionicons name="lock-closed" size={18} color="#0284C7" />
+                <Text style={styles.privacyNoticeText}>
+                  Tus documentos solo son revisados por el equipo oficial de validación bajo estrictos estándares de privacidad (Ley N° 19.628). Tu carnet nunca será compartido ni visible para otros tutores.
+                </Text>
+              </View>
+
+              <TouchableOpacity 
+                style={[styles.submitIdentityBtn, submittingId && { opacity: 0.6 }]}
+                onPress={handleSubmitIdentity}
+                disabled={submittingId}
+              >
+                <Ionicons name="shield-checkmark" size={18} color="#FFFFFF" />
+                <Text style={styles.submitIdentityBtnText}>
+                  {submittingId ? 'Enviando documentos...' : 'Enviar Cédula para Verificación Oficial'}
+                </Text>
+              </TouchableOpacity>
+            </ScrollView>
           </View>
         </KeyboardAvoidingView>
       </Modal>
@@ -1927,5 +2237,267 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 12,
     fontWeight: '700',
+  },
+  // Estilos de Verificación de Identidad Oficial (KYC)
+  kycVerifiedCard: {
+    backgroundColor: '#F0FDF4',
+    borderWidth: 1.5,
+    borderColor: '#BBF7D0',
+    borderRadius: 16,
+    padding: 16,
+  },
+  kycVerifiedHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  kycBadgeCircleVerified: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: '#DCFCE7',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  kycVerifiedTitle: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: '#15803D',
+  },
+  kycVerifiedSub: {
+    fontSize: 11,
+    color: '#16A34A',
+    marginTop: 2,
+    fontWeight: '600',
+  },
+  kycCheckPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#16A34A',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+    gap: 4,
+  },
+  kycCheckPillText: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#FFFFFF',
+  },
+  kycVerifiedDesc: {
+    fontSize: 12,
+    color: '#166534',
+    lineHeight: 17,
+  },
+  kycPendingCard: {
+    backgroundColor: '#FFFBEB',
+    borderWidth: 1.5,
+    borderColor: '#FDE68A',
+    borderRadius: 16,
+    padding: 16,
+  },
+  kycPendingHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  kycBadgeCirclePending: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: '#FEF3C7',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  kycPendingTitle: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: '#92400E',
+  },
+  kycPendingSub: {
+    fontSize: 11,
+    color: '#B45309',
+    marginTop: 2,
+    fontWeight: '600',
+  },
+  kycPendingPill: {
+    backgroundColor: '#F59E0B',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+  },
+  kycPendingPillText: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#FFFFFF',
+  },
+  kycPendingDesc: {
+    fontSize: 12,
+    color: '#78350F',
+    lineHeight: 17,
+  },
+  kycUnverifiedCard: {
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1.5,
+    borderColor: '#E2E8F0',
+    borderRadius: 16,
+    padding: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  kycUnverifiedHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  kycBadgeCircleUnverified: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: '#E0F2FE',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  kycUnverifiedTitle: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: '#0F172A',
+  },
+  kycUnverifiedSub: {
+    fontSize: 11,
+    color: '#64748B',
+    marginTop: 2,
+  },
+  kycUnverifiedDesc: {
+    fontSize: 12,
+    color: '#475569',
+    lineHeight: 17,
+    marginBottom: 14,
+  },
+  kycActionBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#0284C7',
+    paddingVertical: 12,
+    borderRadius: 12,
+    gap: 8,
+    shadowColor: '#0284C7',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  kycActionBtnText: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#FFFFFF',
+  },
+  photoFieldHint: {
+    fontSize: 11,
+    color: '#64748B',
+    marginBottom: 8,
+  },
+  idPreviewContainer: {
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    overflow: 'hidden',
+    backgroundColor: '#F8FAFC',
+    marginBottom: 8,
+  },
+  idCardPreviewImage: {
+    width: '100%',
+    height: 160,
+    resizeMode: 'cover',
+  },
+  idPreviewActions: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    padding: 8,
+    backgroundColor: '#FFFFFF',
+    borderTopWidth: 1,
+    borderTopColor: '#F1F5F9',
+    gap: 8,
+  },
+  idRetakeBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F0F9FF',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#BAE6FD',
+    gap: 4,
+  },
+  idRetakeText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#0284C7',
+  },
+  idUploadButtonsRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 8,
+  },
+  idUploadBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#F0F9FF',
+    borderWidth: 1.5,
+    borderColor: '#BAE6FD',
+    borderStyle: 'dashed',
+    borderRadius: 12,
+    paddingVertical: 14,
+    gap: 6,
+  },
+  idUploadBtnText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#0284C7',
+  },
+  privacyNoticeCard: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    backgroundColor: '#F0F9FF',
+    borderWidth: 1,
+    borderColor: '#BAE6FD',
+    borderRadius: 12,
+    padding: 12,
+    marginTop: 16,
+    marginBottom: 16,
+    gap: 10,
+  },
+  privacyNoticeText: {
+    flex: 1,
+    fontSize: 11,
+    color: '#0369A1',
+    lineHeight: 16,
+  },
+  submitIdentityBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#0284C7',
+    paddingVertical: 14,
+    borderRadius: 14,
+    gap: 8,
+    marginBottom: 20,
+    shadowColor: '#0284C7',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 5,
+    elevation: 3,
+  },
+  submitIdentityBtnText: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: '#FFFFFF',
   },
 });

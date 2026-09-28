@@ -6,6 +6,9 @@ export type NotificationType =
   | 'community_join_request'
   | 'community_request'
   | 'community_expelled'
+  | 'identity_verification_pending'
+  | 'identity_verified'
+  | 'identity_rejected'
   | 'system';
 
 export interface AppNotification {

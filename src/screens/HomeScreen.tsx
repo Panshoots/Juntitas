@@ -236,6 +236,45 @@ export const HomeScreen: React.FC = () => {
         </TouchableOpacity>
       )}
 
+      {/* Banner de Verificación de Identidad Oficial (KYC) */}
+      {currentUser && !isSuperAdmin && (
+        currentUser.identityStatus === 'verified' ? (
+          <View style={styles.verifiedTutorBadgeBanner}>
+            <Ionicons name="shield-checkmark" size={16} color="#15803D" />
+            <Text style={styles.verifiedTutorBadgeText}>Tutor Verificado Oficial • Identidad acreditada con cédula</Text>
+          </View>
+        ) : currentUser.identityStatus === 'pending' ? (
+          <View style={styles.pendingIdBanner}>
+            <Ionicons name="time" size={20} color="#D97706" />
+            <View style={{ flex: 1, marginLeft: 10 }}>
+              <Text style={styles.pendingIdTitle}>Carnet en Proceso de Validación</Text>
+              <Text style={styles.pendingIdSubtitle}>Tu cédula está en revisión por seguridad. Te avisaremos cuando sea aprobada.</Text>
+            </View>
+          </View>
+        ) : (
+          <TouchableOpacity 
+            style={styles.verifyIdBanner}
+            onPress={() => navigation.navigate('Profile', { openIdentityModal: true })}
+            activeOpacity={0.88}
+          >
+            <View style={styles.verifyIdIconWrap}>
+              <Ionicons name="shield-outline" size={22} color="#0284C7" />
+            </View>
+            <View style={{ flex: 1, marginLeft: 12 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                <Text style={styles.verifyIdTag}>SEGURIDAD DE LA MANADA</Text>
+              </View>
+              <Text style={styles.verifyIdTitle}>Valida tu Identidad con tu Carnet</Text>
+              <Text style={styles.verifyIdSubtitle}>Acredita que eres una persona real y obtén tu insignia oficial 🛡️</Text>
+            </View>
+            <View style={styles.verifyIdBtn}>
+              <Text style={styles.verifyIdBtnText}>Validar</Text>
+              <Ionicons name="chevron-forward" size={13} color="#0284C7" />
+            </View>
+          </TouchableOpacity>
+        )
+      )}
+
       {/* Banner Principal / Pasaporte Perruno */}
       {currentDogs && currentDogs.length > 0 ? (
         <TouchableOpacity 
@@ -921,6 +960,101 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontWeight: '800',
     fontSize: 15,
+  },
+  verifiedTutorBadgeBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#DCFCE7',
+    borderWidth: 1,
+    borderColor: '#BBF7D0',
+    borderRadius: 14,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    marginBottom: 16,
+    gap: 8,
+  },
+  verifiedTutorBadgeText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#15803D',
+  },
+  pendingIdBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FEF3C7',
+    borderWidth: 1,
+    borderColor: '#FDE68A',
+    borderRadius: 14,
+    padding: 14,
+    marginBottom: 16,
+  },
+  pendingIdTitle: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#92400E',
+  },
+  pendingIdSubtitle: {
+    fontSize: 11,
+    color: '#B45309',
+    marginTop: 2,
+    lineHeight: 15,
+  },
+  verifyIdBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F0F9FF',
+    borderWidth: 1.5,
+    borderColor: '#BAE6FD',
+    borderRadius: 16,
+    padding: 14,
+    marginBottom: 16,
+    shadowColor: '#0284C7',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 6,
+    elevation: 2,
+  },
+  verifyIdIconWrap: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: '#E0F2FE',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  verifyIdTag: {
+    fontSize: 10,
+    fontWeight: '900',
+    color: '#0284C7',
+    letterSpacing: 0.8,
+  },
+  verifyIdTitle: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: '#0F172A',
+    marginTop: 1,
+  },
+  verifyIdSubtitle: {
+    fontSize: 11,
+    color: '#64748B',
+    marginTop: 2,
+    lineHeight: 15,
+  },
+  verifyIdBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#BAE6FD',
+    gap: 3,
+  },
+  verifyIdBtnText: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: '#0284C7',
   },
 });
 

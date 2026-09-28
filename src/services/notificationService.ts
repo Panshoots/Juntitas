@@ -258,6 +258,54 @@ export const notifySuperAdminOfNewAdminRegistration = async (
 };
 
 /**
+ * Notificar al Super Administrador que un usuario ha enviado su carnet para validación
+ */
+export const notifySuperAdminOfNewIdentityVerification = async (
+  userId: string,
+  userName: string,
+  rut: string
+): Promise<void> => {
+  await sendNotificationToUser('zjnYSghe7oMOd3FPCnMFfpE2Yrb2', {
+    title: `🛡️ Nueva Verificación de Carnet`,
+    message: `${userName} (RUT: ${rut}) ha enviado su cédula de identidad para validación oficial. Revisa y certifica su cuenta en el CRM.`,
+    type: 'identity_verification_pending',
+    metadata: {
+      action: 'identity_review',
+      userId,
+      rut
+    }
+  });
+};
+
+/**
+ * Notificar al usuario que su identidad ha sido aprobada
+ */
+export const notifyUserOfIdentityApproval = async (
+  userId: string
+): Promise<void> => {
+  await sendNotificationToUser(userId, {
+    title: `🎉 ¡Identidad Oficial Verificada!`,
+    message: `¡Felicitaciones! Tu cédula de identidad fue validada con éxito. Ya cuentas con la insignia oficial de Tutor Verificado 🛡️ y ganaste +50 🐾 Huellitas.`,
+    type: 'identity_verified'
+  });
+};
+
+/**
+ * Notificar al usuario que su carnet fue rechazado con motivo
+ */
+export const notifyUserOfIdentityRejection = async (
+  userId: string,
+  reason: string
+): Promise<void> => {
+  await sendNotificationToUser(userId, {
+    title: `❌ Verificación de Carnet no aprobada`,
+    message: `Tu solicitud de validación de identidad no pudo ser aprobada. Motivo: ${reason}. Puedes volver a enviar tus fotos en tu Perfil.`,
+    type: 'identity_rejected',
+    cancellationReason: reason
+  });
+};
+
+/**
  * Notificar a todos los miembros de una comunidad cuando se crea una nueva junta oficial
  */
 export const notifyCommunityMembersOfNewEvent = async (

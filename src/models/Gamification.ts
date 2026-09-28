@@ -5,6 +5,7 @@ export type PawActionType =
   | 'event_attended'
   | 'mission_completed'
   | 'surprise_paw'
+  | 'account_verified'
   | 'redeem_digital'
   | 'redeem_coupon'
   | 'admin_adjustment';

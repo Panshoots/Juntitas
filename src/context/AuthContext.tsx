@@ -59,6 +59,8 @@ export const SUPER_ADMIN_USER: AppUser = {
   privacy: { showDogsPublicly: true, showCommunitiesPublicly: true, showAttendancePublicly: true },
   pawBalance: 9999,
   isSuperAdmin: true,
+  isIdentityVerified: true,
+  identityStatus: 'verified',
   status: 'ACTIVO',
   createdAt: new Date(2024, 0, 1)
 };
@@ -118,6 +120,7 @@ interface AuthContextType {
   isPrimaryAdminOf: (communityId: string) => boolean;
   canCreateEventFor: (communityId: string) => boolean;
   isBusinessOwner: boolean;
+  refreshCurrentUser: () => Promise<void>;
 }
 
 const defaultProfile: ActiveProfileInfo = {
@@ -141,6 +144,7 @@ const AuthContext = createContext<AuthContextType>({
   loginWithGoogle: async () => ({ success: false, message: '' }),
   sendPasswordReset: async () => ({ success: false, message: '' }),
   logout: () => {},
+  refreshCurrentUser: async () => {},
   loadUserDogs: async () => [],
   addDogToUser: async () => ({ success: false, message: '' }),
   refreshDogs: async () => {},
@@ -765,6 +769,48 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const isBusinessOwner = currentUser.roleType === 'business_owner';
 
+  const refreshCurrentUser = async () => {
+    if (!currentUser?.id) return;
+    try {
+      const snap = await getDoc(doc(db, 'users', currentUser.id));
+      if (snap.exists()) {
+        const d = snap.data();
+        const updated: AppUser = {
+          ...currentUser,
+          displayName: d.displayName || currentUser.displayName,
+          email: d.email || currentUser.email,
+          photoURL: d.photoURL !== undefined ? d.photoURL : currentUser.photoURL,
+          bio: d.bio || currentUser.bio,
+          roleType: d.roleType || currentUser.roleType,
+          status: d.status || currentUser.status,
+          pawBalance: d.pawBalance !== undefined ? d.pawBalance : currentUser.pawBalance,
+          isSuperAdmin: !!d.isSuperAdmin,
+          isIdentityVerified: !!d.isIdentityVerified,
+          identityStatus: d.identityStatus || currentUser.identityStatus || 'unverified',
+          identityData: d.identityData || currentUser.identityData,
+          location: d.location || currentUser.location,
+          contact: d.contact || currentUser.contact,
+          privacy: d.privacy || currentUser.privacy
+        };
+        setCurrentUser(updated);
+        try {
+          await AsyncStorage.setItem('@juntitas_active_user', JSON.stringify(updated));
+        } catch (e) {}
+      } else {
+        const users = await getUsersFromDb();
+        const u = users.find(x => x.id === currentUser.id);
+        if (u) {
+          setCurrentUser(u);
+          try {
+            await AsyncStorage.setItem('@juntitas_active_user', JSON.stringify(u));
+          } catch (e) {}
+        }
+      }
+    } catch (e) {
+      console.warn('Error refrescando usuario actual:', e);
+    }
+  };
+
   return (
     <AuthContext.Provider
       value={{
@@ -790,6 +836,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         isPrimaryAdminOf,
         canCreateEventFor,
         isBusinessOwner,
+        refreshCurrentUser,
       }}
     >
       {children}

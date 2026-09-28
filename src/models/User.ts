@@ -31,6 +31,20 @@ export type UserRole =
   | 'business_owner' 
   | 'member';
 
+export type IdentityVerificationStatus = 'unverified' | 'pending' | 'verified' | 'rejected';
+
+export interface IdentityVerificationData {
+  rut: string;
+  documentNumber?: string;
+  frontIdCardUrl: string;
+  backIdCardUrl: string;
+  selfieUrl?: string;
+  submittedAt: any;
+  reviewedAt?: any;
+  reviewedBy?: string;
+  rejectionReason?: string;
+}
+
 export interface AppUser {
   id: string; // Firebase Auth UID
   email: string;
@@ -48,6 +62,9 @@ export interface AppUser {
   isSuperAdmin?: boolean;
   status: UserStatus;
   suspendedReason?: string;
+  isIdentityVerified?: boolean;
+  identityStatus?: IdentityVerificationStatus;
+  identityData?: IdentityVerificationData;
   createdAt: any;
   updatedAt?: any;
 }

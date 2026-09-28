@@ -9,7 +9,8 @@ import {
   Modal, 
   ScrollView, 
   RefreshControl,
-  ActivityIndicator 
+  ActivityIndicator,
+  Image 
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -39,6 +40,7 @@ import {
 } from '../services/eventService';
 import { resetEntireApp, seedRealisticData } from '../services/seedService';
 import { useToast } from '../context/ToastContext';
+import { approveIdentityVerification, rejectIdentityVerification } from '../services/identityService';
 
 type CrmTab = 'users' | 'communities' | 'events' | 'audit';
 
@@ -91,7 +93,7 @@ export const SuperAdminPanelScreen: React.FC = () => {
   // Datos CRM Usuarios
   const [users, setUsers] = useState<AppUser[]>([]);
   const [userSearch, setUserSearch] = useState('');
-  const [userStatusFilter, setUserStatusFilter] = useState<'ALL' | 'PENDING' | 'ACTIVE' | 'SUSPENDED'>('ALL');
+  const [userStatusFilter, setUserStatusFilter] = useState<'ALL' | 'PENDING' | 'ACTIVE' | 'SUSPENDED' | 'KYC'>('ALL');
 
   // Modales de Usuario
   const [selectedUser, setSelectedUser] = useState<AppUser | null>(null);
@@ -105,6 +107,12 @@ export const SuperAdminPanelScreen: React.FC = () => {
   const [editDisplayName, setEditDisplayName] = useState('');
   const [editComuna, setEditComuna] = useState('');
   const [editBio, setEditBio] = useState('');
+
+  // Modal para verificación de Cédula (KYC)
+  const [selectedUserForKyc, setSelectedUserForKyc] = useState<AppUser | null>(null);
+  const [showKycModal, setShowKycModal] = useState(false);
+  const [kycRejectReason, setKycRejectReason] = useState('Fotografía borrosa o no legible');
+  const [processingKyc, setProcessingKyc] = useState(false);
 
   // Modal para restablecer contraseña desde CRM
   const [showResetPwdModal, setShowResetPwdModal] = useState(false);
@@ -227,6 +235,36 @@ export const SuperAdminPanelScreen: React.FC = () => {
     loadAllCrmData();
   };
 
+  const handleOpenKycModal = (user: AppUser) => {
+    setSelectedUserForKyc(user);
+    setKycRejectReason('Fotografía borrosa o no legible');
+    setShowKycModal(true);
+  };
+
+  const handleApproveKyc = async () => {
+    if (!selectedUserForKyc) return;
+    setProcessingKyc(true);
+    const res = await approveIdentityVerification(selectedUserForKyc.id, currentUser.id);
+    setProcessingKyc(false);
+    showToast(res.message, res.success ? 'success' : 'error');
+    if (res.success) {
+      setShowKycModal(false);
+      loadAllCrmData();
+    }
+  };
+
+  const handleRejectKyc = async () => {
+    if (!selectedUserForKyc) return;
+    setProcessingKyc(true);
+    const res = await rejectIdentityVerification(selectedUserForKyc.id, currentUser.id, kycRejectReason);
+    setProcessingKyc(false);
+    showToast(res.message, res.success ? 'warning' : 'error');
+    if (res.success) {
+      setShowKycModal(false);
+      loadAllCrmData();
+    }
+  };
+
   const handleApproveCommunity = async (reqId: string) => {
     const res = await approveCommunityRequest(reqId, currentUser.id);
     showToast(res.message, res.success ? 'success' : 'error');
@@ -323,6 +361,9 @@ export const SuperAdminPanelScreen: React.FC = () => {
     if (userStatusFilter === 'PENDING') {
       return u.status === 'PENDIENTE_APROBACION';
     }
+    if (userStatusFilter === 'KYC') {
+      return u.identityStatus === 'pending' || u.identityStatus === 'verified' || u.identityStatus === 'rejected';
+    }
     if (userStatusFilter === 'ACTIVE') {
       return u.status === 'ACTIVO' || u.status === 'active';
     }
@@ -330,6 +371,12 @@ export const SuperAdminPanelScreen: React.FC = () => {
       return u.status === 'SUSPENDIDO' || u.status === 'suspended' || u.status === 'banned';
     }
     return true;
+  }).sort((a, b) => {
+    if (userStatusFilter === 'KYC') {
+      if (a.identityStatus === 'pending' && b.identityStatus !== 'pending') return -1;
+      if (b.identityStatus === 'pending' && a.identityStatus !== 'pending') return 1;
+    }
+    return 0;
   });
 
   // Filtrado de juntas
@@ -494,17 +541,23 @@ export const SuperAdminPanelScreen: React.FC = () => {
           </View>
 
           <View style={styles.filterPillsRow}>
-            {(['ALL', 'PENDING', 'ACTIVE', 'SUSPENDED'] as const).map(f => (
-              <TouchableOpacity 
-                key={f}
-                style={[styles.pill, userStatusFilter === f && styles.pillActive]}
-                onPress={() => setUserStatusFilter(f)}
-              >
-                <Text style={[styles.pillText, userStatusFilter === f && styles.pillTextActive]}>
-                  {f === 'ALL' ? 'Todos' : f === 'PENDING' ? 'Pendientes ⏳' : f === 'ACTIVE' ? 'Activos ✅' : 'Suspendidos ⛔'}
-                </Text>
-              </TouchableOpacity>
-            ))}
+            {(['ALL', 'PENDING', 'KYC', 'ACTIVE', 'SUSPENDED'] as const).map(f => {
+              const pendingKycCount = users.filter(u => u.identityStatus === 'pending').length;
+              return (
+                <TouchableOpacity 
+                  key={f}
+                  style={[styles.pill, userStatusFilter === f && styles.pillActive]}
+                  onPress={() => setUserStatusFilter(f)}
+                >
+                  <Text style={[styles.pillText, userStatusFilter === f && styles.pillTextActive]}>
+                    {f === 'ALL' ? 'Todos' : 
+                     f === 'PENDING' ? 'Pendientes ⏳' : 
+                     f === 'KYC' ? `Carnet / KYC 🛡️${pendingKycCount > 0 ? ` (${pendingKycCount})` : ''}` :
+                     f === 'ACTIVE' ? 'Activos ✅' : 'Suspendidos ⛔'}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
           </View>
 
           {/* Listado de Usuarios */}
@@ -543,6 +596,58 @@ export const SuperAdminPanelScreen: React.FC = () => {
                         {isPending ? 'PENDIENTE' : isSuspended ? 'SUSPENDIDO' : 'ACTIVO'}
                       </Text>
                     </View>
+                  </View>
+
+                  {/* Fila de Verificación de Identidad Oficial con Carnet */}
+                  <View style={styles.kycCrmRow}>
+                    <View style={[
+                      styles.kycCrmTag,
+                      item.identityStatus === 'verified' ? styles.kycCrmTagVerified :
+                      item.identityStatus === 'pending' ? styles.kycCrmTagPending :
+                      item.identityStatus === 'rejected' ? styles.kycCrmTagRejected :
+                      styles.kycCrmTagUnverified
+                    ]}>
+                      <Ionicons 
+                        name={
+                          item.identityStatus === 'verified' ? "shield-checkmark" :
+                          item.identityStatus === 'pending' ? "time" :
+                          item.identityStatus === 'rejected' ? "alert-circle" :
+                          "shield-outline"
+                        } 
+                        size={13} 
+                        color={
+                          item.identityStatus === 'verified' ? "#15803D" :
+                          item.identityStatus === 'pending' ? "#B45309" :
+                          item.identityStatus === 'rejected' ? "#DC2626" :
+                          "#64748B"
+                        } 
+                      />
+                      <Text style={[
+                        styles.kycCrmTagText,
+                        item.identityStatus === 'verified' ? { color: '#15803D' } :
+                        item.identityStatus === 'pending' ? { color: '#B45309' } :
+                        item.identityStatus === 'rejected' ? { color: '#DC2626' } :
+                        { color: '#64748B' }
+                      ]}>
+                        {item.identityStatus === 'verified' ? 'Tutor Verificado Oficial' :
+                         item.identityStatus === 'pending' ? 'Cédula en Espera de Aprobación' :
+                         item.identityStatus === 'rejected' ? 'Cédula Rechazada' :
+                         'Sin Cédula'}
+                      </Text>
+                    </View>
+
+                    {item.identityData?.frontIdCardUrl && (
+                      <TouchableOpacity 
+                        style={styles.kycInspectBtn} 
+                        onPress={() => handleOpenKycModal(item)}
+                        activeOpacity={0.8}
+                      >
+                        <Ionicons name="card" size={13} color="#0284C7" />
+                        <Text style={styles.kycInspectBtnText}>
+                          {item.identityStatus === 'pending' ? 'Revisar Carnet' : 'Ver Carnet'}
+                        </Text>
+                      </TouchableOpacity>
+                    )}
                   </View>
 
                   {/* Detalle de Rol y Solicitud */}
@@ -1163,6 +1268,190 @@ export const SuperAdminPanelScreen: React.FC = () => {
             <TouchableOpacity style={styles.btnDanger} onPress={handleConfirmCancelEvent}>
               <Text style={styles.btnDangerText}>Confirmar Cancelación de Junta</Text>
             </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* MODAL: INSPECCIÓN Y APROBACIÓN DE CÉDULA DE IDENTIDAD (KYC) */}
+      <Modal visible={showKycModal} transparent animationType="slide">
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalCard, styles.kycModalCard]}>
+            <View style={styles.modalHeader}>
+              <View style={styles.kycModalTitleRow}>
+                <Ionicons name="shield-checkmark" size={22} color="#0284C7" />
+                <Text style={styles.modalTitle}>Verificación de Cédula (KYC)</Text>
+              </View>
+              <TouchableOpacity onPress={() => setShowKycModal(false)}>
+                <Ionicons name="close" size={24} color="#64748B" />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 20 }}>
+              {/* Resumen del Usuario */}
+              <View style={styles.kycUserSummaryBox}>
+                <View style={styles.kycUserAvatarCircle}>
+                  <Text style={styles.kycUserAvatarText}>
+                    {selectedUserForKyc?.displayName?.substring(0, 2).toUpperCase() || 'US'}
+                  </Text>
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.kycUserName}>{selectedUserForKyc?.displayName}</Text>
+                  <Text style={styles.kycUserEmail}>{selectedUserForKyc?.email}</Text>
+                  <View style={styles.kycMetaBadgesRow}>
+                    <View style={styles.kycMetaBadge}>
+                      <Text style={styles.kycMetaBadgeLabel}>RUT:</Text>
+                      <Text style={styles.kycMetaBadgeVal}>{selectedUserForKyc?.identityData?.rut || 'Sin RUT'}</Text>
+                    </View>
+                    <View style={styles.kycMetaBadge}>
+                      <Text style={styles.kycMetaBadgeLabel}>N° Documento:</Text>
+                      <Text style={styles.kycMetaBadgeVal}>{selectedUserForKyc?.identityData?.documentNumber || 'Sin N°'}</Text>
+                    </View>
+                  </View>
+                </View>
+              </View>
+
+              {/* Status actual */}
+              <View style={[
+                styles.kycStatusBanner,
+                selectedUserForKyc?.identityStatus === 'verified' ? styles.kycStatusBannerVerified :
+                selectedUserForKyc?.identityStatus === 'pending' ? styles.kycStatusBannerPending :
+                selectedUserForKyc?.identityStatus === 'rejected' ? styles.kycStatusBannerRejected : {}
+              ]}>
+                <Ionicons 
+                  name={
+                    selectedUserForKyc?.identityStatus === 'verified' ? 'checkmark-circle' :
+                    selectedUserForKyc?.identityStatus === 'pending' ? 'time' :
+                    selectedUserForKyc?.identityStatus === 'rejected' ? 'close-circle' : 'help-circle'
+                  } 
+                  size={16} 
+                  color={
+                    selectedUserForKyc?.identityStatus === 'verified' ? '#15803D' :
+                    selectedUserForKyc?.identityStatus === 'pending' ? '#B45309' :
+                    selectedUserForKyc?.identityStatus === 'rejected' ? '#DC2626' : '#64748B'
+                  } 
+                />
+                <Text style={styles.kycStatusBannerText}>
+                  Estado actual: <Text style={{ fontWeight: '800' }}>
+                    {selectedUserForKyc?.identityStatus === 'verified' ? 'Aprobada / Oficialmente Verificado' :
+                     selectedUserForKyc?.identityStatus === 'pending' ? 'Pendiente de Revisión Super Admin' :
+                     selectedUserForKyc?.identityStatus === 'rejected' ? `Rechazada (${selectedUserForKyc.identityData?.rejectionReason || 'Sin motivo'})` :
+                     'No solicitada'}
+                  </Text>
+                </Text>
+              </View>
+
+              {/* 3 Fotografías requeridas */}
+              <Text style={styles.kycSectionTitle}>📸 Documentos y Fotografía de Validación</Text>
+              
+              {/* Foto 1: Frente Carnet */}
+              <View style={styles.kycPhotoCard}>
+                <View style={styles.kycPhotoHeader}>
+                  <Ionicons name="card-outline" size={16} color="#0284C7" />
+                  <Text style={styles.kycPhotoTitle}>1. Cédula Frontal (Anverso)</Text>
+                </View>
+                {selectedUserForKyc?.identityData?.frontIdCardUrl ? (
+                  <Image 
+                    source={{ uri: selectedUserForKyc.identityData.frontIdCardUrl }} 
+                    style={styles.kycImagePreview}
+                    resizeMode="contain"
+                  />
+                ) : (
+                  <View style={styles.kycImagePlaceholder}>
+                    <Text style={styles.kycImagePlaceholderText}>No adjuntada</Text>
+                  </View>
+                )}
+              </View>
+
+              {/* Foto 2: Dorso Carnet */}
+              <View style={styles.kycPhotoCard}>
+                <View style={styles.kycPhotoHeader}>
+                  <Ionicons name="barcode-outline" size={16} color="#0284C7" />
+                  <Text style={styles.kycPhotoTitle}>2. Cédula Reverso (Dorso)</Text>
+                </View>
+                {selectedUserForKyc?.identityData?.backIdCardUrl ? (
+                  <Image 
+                    source={{ uri: selectedUserForKyc.identityData.backIdCardUrl }} 
+                    style={styles.kycImagePreview}
+                    resizeMode="contain"
+                  />
+                ) : (
+                  <View style={styles.kycImagePlaceholder}>
+                    <Text style={styles.kycImagePlaceholderText}>No adjuntada</Text>
+                  </View>
+                )}
+              </View>
+
+              {/* Foto 3: Selfie */}
+              <View style={styles.kycPhotoCard}>
+                <View style={styles.kycPhotoHeader}>
+                  <Ionicons name="person-circle-outline" size={16} color="#0284C7" />
+                  <Text style={styles.kycPhotoTitle}>3. Selfie con Cédula (Prueba de Vida)</Text>
+                </View>
+                {selectedUserForKyc?.identityData?.selfieUrl ? (
+                  <Image 
+                    source={{ uri: selectedUserForKyc.identityData.selfieUrl }} 
+                    style={styles.kycImagePreview}
+                    resizeMode="contain"
+                  />
+                ) : (
+                  <View style={styles.kycImagePlaceholder}>
+                    <Text style={styles.kycImagePlaceholderText}>No adjuntada</Text>
+                  </View>
+                )}
+              </View>
+
+              {/* Motivo de rechazo rápido o personalizado */}
+              <View style={styles.kycRejectBox}>
+                <Text style={styles.inputLabel}>En caso de rechazo, indicar motivo al tutor:</Text>
+                <View style={styles.kycReasonsRow}>
+                  {[
+                    'Fotografía borrosa o no legible',
+                    'El RUT no coincide con la foto',
+                    'Selfie no coincide con la foto carnet',
+                    'Cédula vencida o no válida'
+                  ].map(reason => (
+                    <TouchableOpacity
+                      key={reason}
+                      style={[styles.kycReasonChip, kycRejectReason === reason && styles.kycReasonChipActive]}
+                      onPress={() => setKycRejectReason(reason)}
+                    >
+                      <Text style={[styles.kycReasonChipText, kycRejectReason === reason && styles.kycReasonChipTextActive]}>
+                        {reason}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+                <TextInput
+                  style={styles.modalInput}
+                  value={kycRejectReason}
+                  onChangeText={setKycRejectReason}
+                  placeholder="Escribe o personaliza el motivo de rechazo..."
+                />
+              </View>
+
+              {/* Botones de acción */}
+              {processingKyc ? (
+                <ActivityIndicator size="large" color="#0284C7" style={{ marginTop: 16 }} />
+              ) : (
+                <View style={styles.kycActionsRow}>
+                  <TouchableOpacity 
+                    style={[styles.kycBtnAction, styles.kycBtnReject]} 
+                    onPress={handleRejectKyc}
+                  >
+                    <Ionicons name="close-circle" size={16} color="#FFFFFF" />
+                    <Text style={styles.kycBtnActionText}>Rechazar Cédula</Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity 
+                    style={[styles.kycBtnAction, styles.kycBtnApprove]} 
+                    onPress={handleApproveKyc}
+                  >
+                    <Ionicons name="shield-checkmark" size={16} color="#FFFFFF" />
+                    <Text style={styles.kycBtnActionText}>Aprobar Cédula Oficial (+50🐾)</Text>
+                  </TouchableOpacity>
+                </View>
+              )}
+            </ScrollView>
           </View>
         </View>
       </Modal>
@@ -1944,6 +2233,262 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     lineHeight: 18,
     maxWidth: 280,
+  },
+  // Estilos de Verificación de Cédula (KYC)
+  kycCrmRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#F8FAFC',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 10,
+    marginTop: 8,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  kycCrmTag: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+  },
+  kycCrmTagVerified: {
+    backgroundColor: '#DCFCE7',
+  },
+  kycCrmTagPending: {
+    backgroundColor: '#FEF3C7',
+  },
+  kycCrmTagRejected: {
+    backgroundColor: '#FEE2E2',
+  },
+  kycCrmTagUnverified: {
+    backgroundColor: '#F1F5F9',
+  },
+  kycCrmTagText: {
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  kycInspectBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    backgroundColor: '#E0F2FE',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#BAE6FD',
+  },
+  kycInspectBtnText: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: '#0284C7',
+  },
+  kycModalCard: {
+    maxHeight: '90%',
+  },
+  kycModalTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  kycUserSummaryBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    backgroundColor: '#F8FAFC',
+    padding: 12,
+    borderRadius: 12,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  kycUserAvatarCircle: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: '#0284C7',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  kycUserAvatarText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '900',
+  },
+  kycUserName: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: '#0F172A',
+  },
+  kycUserEmail: {
+    fontSize: 12,
+    color: '#64748B',
+    marginBottom: 4,
+  },
+  kycMetaBadgesRow: {
+    flexDirection: 'row',
+    gap: 10,
+    flexWrap: 'wrap',
+  },
+  kycMetaBadge: {
+    flexDirection: 'row',
+    gap: 4,
+    backgroundColor: '#FFFFFF',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  kycMetaBadgeLabel: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#475569',
+  },
+  kycMetaBadgeVal: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#0F172A',
+  },
+  kycStatusBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    padding: 10,
+    borderRadius: 10,
+    marginBottom: 16,
+    backgroundColor: '#F1F5F9',
+  },
+  kycStatusBannerVerified: {
+    backgroundColor: '#DCFCE7',
+  },
+  kycStatusBannerPending: {
+    backgroundColor: '#FEF3C7',
+  },
+  kycStatusBannerRejected: {
+    backgroundColor: '#FEE2E2',
+  },
+  kycStatusBannerText: {
+    fontSize: 12,
+    color: '#334155',
+    flex: 1,
+  },
+  kycSectionTitle: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: '#0F172A',
+    marginBottom: 10,
+  },
+  kycPhotoCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    padding: 10,
+    marginBottom: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 3,
+    elevation: 1,
+  },
+  kycPhotoHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: 8,
+  },
+  kycPhotoTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#334155',
+  },
+  kycImagePreview: {
+    width: '100%',
+    height: 180,
+    borderRadius: 8,
+    backgroundColor: '#0F172A',
+  },
+  kycImagePlaceholder: {
+    width: '100%',
+    height: 90,
+    borderRadius: 8,
+    backgroundColor: '#F1F5F9',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderStyle: 'dashed',
+    borderColor: '#CBD5E1',
+  },
+  kycImagePlaceholderText: {
+    fontSize: 12,
+    color: '#94A3B8',
+  },
+  kycRejectBox: {
+    backgroundColor: '#FFF1F2',
+    padding: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#FECDD3',
+    marginTop: 8,
+    marginBottom: 12,
+  },
+  kycReasonsRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+    marginBottom: 10,
+    marginTop: 4,
+  },
+  kycReasonChip: {
+    backgroundColor: '#FFFFFF',
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#FECDD3',
+  },
+  kycReasonChipActive: {
+    backgroundColor: '#E11D48',
+    borderColor: '#E11D48',
+  },
+  kycReasonChipText: {
+    fontSize: 11,
+    color: '#9F1239',
+    fontWeight: '600',
+  },
+  kycReasonChipTextActive: {
+    color: '#FFFFFF',
+    fontWeight: '700',
+  },
+  kycActionsRow: {
+    flexDirection: 'row',
+    gap: 10,
+    marginTop: 10,
+  },
+  kycBtnAction: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 13,
+    borderRadius: 12,
+  },
+  kycBtnReject: {
+    backgroundColor: '#DC2626',
+  },
+  kycBtnApprove: {
+    backgroundColor: '#15803D',
+  },
+  kycBtnActionText: {
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: '800',
   },
 });
 

@@ -52,6 +52,9 @@ export const getUsersFromDb = async (): Promise<AppUser[]> => {
           isSuperAdmin: !!data.isSuperAdmin,
           status: data.status || 'ACTIVO',
           suspendedReason: data.suspendedReason,
+          isIdentityVerified: !!data.isIdentityVerified,
+          identityStatus: data.identityStatus || 'unverified',
+          identityData: data.identityData,
           createdAt: data.createdAt?.toDate ? data.createdAt.toDate() : new Date(),
           updatedAt: data.updatedAt?.toDate ? data.updatedAt.toDate() : new Date()
         });
