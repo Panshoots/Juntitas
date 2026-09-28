@@ -629,10 +629,11 @@ export const SuperAdminPanelScreen: React.FC = () => {
                         item.identityStatus === 'rejected' ? { color: '#DC2626' } :
                         { color: '#64748B' }
                       ]}>
-                        {item.identityStatus === 'verified' ? 'Tutor Verificado Oficial' :
-                         item.identityStatus === 'pending' ? 'Cédula en Espera de Aprobación' :
-                         item.identityStatus === 'rejected' ? 'Cédula Rechazada' :
-                         'Sin Cédula'}
+                        {item.identityStatus === 'verified' 
+                          ? (item.identityData?.verificationMethod === 'auto_ai' ? 'Verificado por IA Automática 🤖' : 'Tutor Verificado Oficial 🛡️')
+                          : item.identityStatus === 'pending' ? 'Cédula en Espera de Aprobación'
+                          : item.identityStatus === 'rejected' ? 'Cédula Rechazada'
+                          : 'Sin Cédula'}
                       </Text>
                     </View>
 
@@ -1332,10 +1333,11 @@ export const SuperAdminPanelScreen: React.FC = () => {
                 />
                 <Text style={styles.kycStatusBannerText}>
                   Estado actual: <Text style={{ fontWeight: '800' }}>
-                    {selectedUserForKyc?.identityStatus === 'verified' ? 'Aprobada / Oficialmente Verificado' :
-                     selectedUserForKyc?.identityStatus === 'pending' ? 'Pendiente de Revisión Super Admin' :
-                     selectedUserForKyc?.identityStatus === 'rejected' ? `Rechazada (${selectedUserForKyc.identityData?.rejectionReason || 'Sin motivo'})` :
-                     'No solicitada'}
+                    {selectedUserForKyc?.identityStatus === 'verified' 
+                      ? `Aprobada / Oficialmente Verificado (${selectedUserForKyc.identityData?.verificationMethod === 'auto_ai' ? 'IA Automática 🤖' : 'Revisión Manual 🛡️'})` 
+                      : selectedUserForKyc?.identityStatus === 'pending' ? 'Pendiente de Revisión Super Admin'
+                      : selectedUserForKyc?.identityStatus === 'rejected' ? `Rechazada (${selectedUserForKyc.identityData?.rejectionReason || 'Sin motivo'})`
+                      : 'No solicitada'}
                   </Text>
                 </Text>
               </View>

@@ -43,6 +43,7 @@ export interface IdentityVerificationData {
   reviewedAt?: any;
   reviewedBy?: string;
   rejectionReason?: string;
+  verificationMethod?: 'auto_ai' | 'manual';
 }
 
 export interface AppUser {
