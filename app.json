@@ -2,11 +2,20 @@
   "expo": {
     "name": "Juntitas",
     "slug": "juntitas",
-    "version": "1.2.1",
+    "version": "1.2.2",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
     "newArchEnabled": false,
+    "updates": {
+      "url": "https://u.expo.dev/3de343f4-2beb-4f04-9a2b-960dcf2a1bd5",
+      "enabled": true,
+      "checkAutomatically": "NEVER",
+      "fallbackToCacheTimeout": 5000
+    },
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
     "splash": {
       "image": "./assets/splash-icon.png",
       "resizeMode": "contain",
@@ -18,7 +27,7 @@
     },
     "android": {
       "package": "com.panchoand1.juntitas",
-      "versionCode": 3,
+      "versionCode": 4,
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#F8FAFC"

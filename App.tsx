@@ -1,10 +1,12 @@
-import React, { Component, ErrorInfo, ReactNode } from 'react';
+import React, { Component, ErrorInfo, ReactNode, useState, useEffect } from 'react';
 import { View, Text, StyleSheet, Platform } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { AppNavigator } from './src/navigation/AppNavigator';
 import { AuthProvider } from './src/context/AuthContext';
 import { ToastProvider } from './src/context/ToastContext';
+import { ForceUpdateModal } from './src/components/ForceUpdateModal';
+import { checkAppUpdates, subscribeToAppForeground, UpdateCheckResult } from './src/services/appUpdateService';
 
 interface ErrorBoundaryProps {
   children: ReactNode;
@@ -43,6 +45,35 @@ class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
 }
 
 export default function App() {
+  const [updateInfo, setUpdateInfo] = useState<UpdateCheckResult | null>(null);
+  const [showUpdateModal, setShowUpdateModal] = useState(false);
+
+  useEffect(() => {
+    // 1. Comprobación inicial al arrancar la app
+    const performUpdateCheck = async () => {
+      try {
+        const result = await checkAppUpdates();
+        if (result.isAvailable) {
+          setUpdateInfo(result);
+          setShowUpdateModal(true);
+        }
+      } catch (err) {
+        console.warn('Error en comprobación inicial de actualización:', err);
+      }
+    };
+
+    performUpdateCheck();
+
+    // 2. Suscribirse al evento de entrar/salir de la app (vuelve de background a foreground)
+    const unsubscribe = subscribeToAppForeground(() => {
+      performUpdateCheck();
+    });
+
+    return () => {
+      unsubscribe();
+    };
+  }, []);
+
   return (
     <SafeAreaProvider style={styles.container}>
       <ErrorBoundary>
@@ -51,6 +82,11 @@ export default function App() {
             <View style={styles.container}>
               <StatusBar style="dark" />
               <AppNavigator />
+              <ForceUpdateModal
+                visible={showUpdateModal}
+                updateInfo={updateInfo}
+                onClose={() => setShowUpdateModal(false)}
+              />
             </View>
           </AuthProvider>
         </ToastProvider>

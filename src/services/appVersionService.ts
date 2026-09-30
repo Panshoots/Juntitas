@@ -2,10 +2,10 @@ import { Platform } from 'react-native';
 import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from '../firebase/config';
 
-export const APP_VERSION = '1.2.1';
-export const BUILD_NUMBER = 3;
-export const RELEASE_DATE = '29 Septiembre 2026';
-export const RELEASE_NOTES = 'Integración con Didit Protocol KYC (Identidad Digital con IA, OCR y Biometría 3D), Eliminación de temporizadores artificiales y Sincronización Automática.';
+export const APP_VERSION = '1.2.2';
+export const BUILD_NUMBER = 4;
+export const RELEASE_DATE = '30 Septiembre 2026';
+export const RELEASE_NOTES = 'Sistema de Actualizaciones Automáticas Inalámbricas (Expo Updates OTA), Detección de regreso a la app (AppState) y Modal de Actualización Forzada.';
 
 export interface AppVersionInfo {
   currentVersion: string;
@@ -13,6 +13,7 @@ export interface AppVersionInfo {
   releaseDate: string;
   releaseNotes: string;
   latestVersion?: string;
+  apkUrl?: string;
   isUpdateAvailable?: boolean;
 }
 

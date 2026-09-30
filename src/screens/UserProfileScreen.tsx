@@ -33,6 +33,7 @@ import {
   applyDiditApprovalToUser 
 } from '../services/diditService';
 import { APP_VERSION, BUILD_NUMBER, triggerAppRefresh } from '../services/appVersionService';
+import { checkAppUpdates, applyAppUpdate } from '../services/appUpdateService';
 
 interface OfficialBadgeInfo {
   id: string;
@@ -967,11 +968,20 @@ export const UserProfileScreen: React.FC = () => {
         </Text>
         <TouchableOpacity 
           style={styles.refreshAppBtn}
-          onPress={() => {
-            showToast('Sincronizando y refrescando app...', 'info');
-            setTimeout(() => {
+          onPress={async () => {
+            showToast('Comprobando actualizaciones...', 'info');
+            try {
+              const res = await checkAppUpdates();
+              if (res.isAvailable) {
+                showToast('¡Nueva actualización detectada! Aplicando...', 'info');
+                await applyAppUpdate();
+              } else {
+                showToast('¡Tienes la versión más reciente!', 'success');
+                triggerAppRefresh();
+              }
+            } catch (err) {
               triggerAppRefresh();
-            }, 400);
+            }
           }}
           activeOpacity={0.8}
         >
