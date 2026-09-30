@@ -630,7 +630,11 @@ export const SuperAdminPanelScreen: React.FC = () => {
                         { color: '#64748B' }
                       ]}>
                         {item.identityStatus === 'verified' 
-                          ? (item.identityData?.verificationMethod === 'auto_ai' ? 'Verificado por IA Automática 🤖' : 'Tutor Verificado Oficial 🛡️')
+                          ? (item.identityData?.verificationMethod === 'didit_kyc' 
+                              ? 'Verificado con Didit KYC 🛡️' 
+                              : item.identityData?.verificationMethod === 'auto_ai' 
+                                ? 'Verificado por IA Automática 🤖' 
+                                : 'Tutor Verificado Oficial 🛡️')
                           : item.identityStatus === 'pending' ? 'Cédula en Espera de Aprobación'
                           : item.identityStatus === 'rejected' ? 'Cédula Rechazada'
                           : 'Sin Cédula'}
@@ -1334,7 +1338,10 @@ export const SuperAdminPanelScreen: React.FC = () => {
                 <Text style={styles.kycStatusBannerText}>
                   Estado actual: <Text style={{ fontWeight: '800' }}>
                     {selectedUserForKyc?.identityStatus === 'verified' 
-                      ? `Aprobada / Oficialmente Verificado (${selectedUserForKyc.identityData?.verificationMethod === 'auto_ai' ? 'IA Automática 🤖' : 'Revisión Manual 🛡️'})` 
+                      ? `Aprobada / Oficialmente Verificado (${
+                          selectedUserForKyc.identityData?.verificationMethod === 'didit_kyc' ? 'Didit KYC Biométrico 🛡️' :
+                          selectedUserForKyc.identityData?.verificationMethod === 'auto_ai' ? 'IA Automática 🤖' : 'Revisión Manual 🛡️'
+                        })` 
                       : selectedUserForKyc?.identityStatus === 'pending' ? 'Pendiente de Revisión Super Admin'
                       : selectedUserForKyc?.identityStatus === 'rejected' ? `Rechazada (${selectedUserForKyc.identityData?.rejectionReason || 'Sin motivo'})`
                       : 'No solicitada'}

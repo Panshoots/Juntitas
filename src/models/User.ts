@@ -43,7 +43,9 @@ export interface IdentityVerificationData {
   reviewedAt?: any;
   reviewedBy?: string;
   rejectionReason?: string;
-  verificationMethod?: 'auto_ai' | 'manual';
+  verificationMethod?: 'didit_kyc' | 'auto_ai' | 'manual';
+  diditSessionId?: string;
+  diditSessionUrl?: string;
 }
 
 export interface AppUser {

@@ -26,6 +26,12 @@ import { getDogBreeds, DogBreed, MASTER_DOG_BREEDS } from '../services/breedServ
 import { takePhoto, pickFromGallery } from '../services/imagePickerService';
 import { useToast } from '../context/ToastContext';
 import { submitIdentityVerification, formatRutChile, validateRutChile } from '../services/identityService';
+import { 
+  createDiditSession, 
+  openDiditVerificationUrl, 
+  checkDiditSessionDecision, 
+  applyDiditApprovalToUser 
+} from '../services/diditService';
 import { APP_VERSION, BUILD_NUMBER, triggerAppRefresh } from '../services/appVersionService';
 
 interface OfficialBadgeInfo {
@@ -154,9 +160,69 @@ export const UserProfileScreen: React.FC = () => {
     }
   };
 
-  const [kycScanStep, setKycScanStep] = useState<number>(0);
+  // Estados para Didit KYC y Verificación
+  const [kycTab, setKycTab] = useState<'didit' | 'manual'>('didit');
+  const [diditLoading, setDiditLoading] = useState(false);
+  const [diditChecking, setDiditChecking] = useState(false);
+  const [activeDiditSessionId, setActiveDiditSessionId] = useState(currentUser.identityData?.diditSessionId || '');
+  const [activeDiditUrl, setActiveDiditUrl] = useState(currentUser.identityData?.diditSessionUrl || '');
 
-  const handleSubmitIdentity = async () => {
+  // Sincronizar sesión activa si cambia el usuario
+  useEffect(() => {
+    if (currentUser.identityData?.diditSessionId) {
+      setActiveDiditSessionId(currentUser.identityData.diditSessionId);
+    }
+    if (currentUser.identityData?.diditSessionUrl) {
+      setActiveDiditUrl(currentUser.identityData.diditSessionUrl);
+    }
+  }, [currentUser.identityData?.diditSessionId, currentUser.identityData?.diditSessionUrl]);
+
+  const handleStartDiditVerification = async () => {
+    setDiditLoading(true);
+    const res = await createDiditSession(currentUser.id, currentUser.email, currentUser.displayName);
+    setDiditLoading(false);
+
+    if (res.success && res.url) {
+      setActiveDiditSessionId(res.sessionId || '');
+      setActiveDiditUrl(res.url);
+      showToast('Abriendo validación en Didit...', 'info');
+      await openDiditVerificationUrl(res.url);
+    } else {
+      showToast(res.message || 'No se pudo iniciar la sesión con Didit.', 'error');
+    }
+  };
+
+  const handleCheckDiditStatus = async () => {
+    const sessionId = activeDiditSessionId || currentUser.identityData?.diditSessionId;
+    if (!sessionId) {
+      showToast('Aún no has iniciado una verificación con Didit.', 'warning');
+      return;
+    }
+
+    setDiditChecking(true);
+    const decision = await checkDiditSessionDecision(sessionId);
+
+    if (decision.status === 'Approved') {
+      const applyRes = await applyDiditApprovalToUser(currentUser.id, decision);
+      setDiditChecking(false);
+      if (applyRes.success) {
+        showToast(applyRes.message, 'success');
+        setShowIdentityModal(false);
+        await refreshCurrentUser();
+      } else {
+        showToast('Error guardando la aprobación.', 'error');
+      }
+    } else if (decision.status === 'Declined') {
+      setDiditChecking(false);
+      showToast(decision.message, 'error');
+      await refreshCurrentUser();
+    } else {
+      setDiditChecking(false);
+      showToast(decision.message, 'info');
+    }
+  };
+
+  const handleSubmitIdentityManual = async () => {
     if (!idRut.trim()) {
       showToast('Por favor ingresa tu RUT.', 'warning');
       return;
@@ -171,17 +237,6 @@ export const UserProfileScreen: React.FC = () => {
     }
 
     setSubmittingId(true);
-    setKycScanStep(1); // 1. Módulo 11
-
-    await new Promise(resolve => setTimeout(resolve, 700));
-    setKycScanStep(2); // 2. Documentos
-
-    await new Promise(resolve => setTimeout(resolve, 700));
-    setKycScanStep(3); // 3. Biometría
-
-    await new Promise(resolve => setTimeout(resolve, 700));
-    setKycScanStep(4); // 4. Aprobado
-
     const res = await submitIdentityVerification(currentUser.id, {
       rut: idRut,
       documentNumber: idDocNumber,
@@ -189,10 +244,7 @@ export const UserProfileScreen: React.FC = () => {
       backIdCardUrl: idBackUrl,
       selfieUrl: idSelfieUrl || undefined
     });
-
-    await new Promise(resolve => setTimeout(resolve, 600));
     setSubmittingId(false);
-    setKycScanStep(0);
 
     showToast(res.message, res.success ? 'success' : 'error');
     if (res.success) {
@@ -535,37 +587,72 @@ export const UserProfileScreen: React.FC = () => {
               </View>
             </View>
             <Text style={styles.kycPendingDesc}>
-              Tus fotografías y antecedentes fueron recibidos por el equipo de moderación oficial. Te notificaremos apenas sea certificada tu identidad.
+              {currentUser.identityData?.verificationMethod === 'didit_kyc'
+                ? 'Tu sesión de validación biométrica con Didit está iniciada. Si ya realizaste el escaneo en el navegador, pulsa el botón a continuación para confirmar:'
+                : 'Tus fotografías y antecedentes fueron recibidos por el equipo de moderación oficial. Te notificaremos apenas sea certificada tu identidad.'}
             </Text>
+
+            {(currentUser.identityData?.verificationMethod === 'didit_kyc' || activeDiditSessionId) && (
+              <View style={{ marginTop: 12, flexDirection: 'row', gap: 8 }}>
+                <TouchableOpacity 
+                  style={[styles.kycActionBtn, { flex: 1, backgroundColor: '#0284C7' }]}
+                  onPress={handleCheckDiditStatus}
+                  disabled={diditChecking}
+                  activeOpacity={0.88}
+                >
+                  {diditChecking ? (
+                    <ActivityIndicator size="small" color="#FFFFFF" />
+                  ) : (
+                    <>
+                      <Ionicons name="refresh" size={16} color="#FFFFFF" />
+                      <Text style={styles.kycActionBtnText}>Comprobar Estado con Didit</Text>
+                    </>
+                  )}
+                </TouchableOpacity>
+
+                {activeDiditUrl ? (
+                  <TouchableOpacity 
+                    style={[styles.kycActionBtn, { backgroundColor: '#F0F9FF', borderWidth: 1, borderColor: '#BAE6FD', paddingHorizontal: 14 }]}
+                    onPress={() => openDiditVerificationUrl(activeDiditUrl)}
+                    activeOpacity={0.88}
+                  >
+                    <Ionicons name="open-outline" size={16} color="#0284C7" />
+                  </TouchableOpacity>
+                ) : null}
+              </View>
+            )}
           </View>
         ) : (
           <View style={styles.kycUnverifiedCard}>
             <View style={styles.kycUnverifiedHeader}>
               <View style={styles.kycBadgeCircleUnverified}>
-                <Ionicons name="shield-outline" size={24} color="#0284C7" />
+                <Ionicons name="shield-checkmark" size={24} color="#0284C7" />
               </View>
               <View style={{ flex: 1, marginLeft: 12 }}>
                 <Text style={styles.kycUnverifiedTitle}>
-                  {currentUser.identityStatus === 'rejected' ? 'Validación Requiere Reintento' : 'Valida tu Identidad con tu Carnet'}
+                  {currentUser.identityStatus === 'rejected' ? 'Validación Requiere Reintento' : 'Valida tu Identidad con Didit (IA 🛡️)'}
                 </Text>
                 <Text style={styles.kycUnverifiedSub}>
                   {currentUser.identityStatus === 'rejected' 
-                    ? (currentUser.identityData?.rejectionReason ? `Motivo: ${currentUser.identityData.rejectionReason}` : 'Sube nuevamente tus fotos')
+                    ? (currentUser.identityData?.rejectionReason ? `Motivo: ${currentUser.identityData.rejectionReason}` : 'Reintenta con Didit')
                     : 'Obtén la insignia de Tutor Verificado y +50 Huellitas'}
                 </Text>
               </View>
             </View>
             <Text style={styles.kycUnverifiedDesc}>
-              Para cuidar a nuestra comunidad y evitar cuentas falsas o suplantaciones, te invitamos a validar tu cédula de identidad. Es rápido y 100% privado.
+              Certifica que eres una persona real mediante escaneo biométrico seguro de Didit (OCR + selfie 3D). Es 100% automático, privado y gratuito.
             </Text>
             <TouchableOpacity 
               style={styles.kycActionBtn}
-              onPress={() => setShowIdentityModal(true)}
+              onPress={() => {
+                setKycTab('didit');
+                setShowIdentityModal(true);
+              }}
               activeOpacity={0.88}
             >
-              <Ionicons name="card" size={16} color="#FFFFFF" />
+              <Ionicons name="sparkles" size={16} color="#FFFFFF" />
               <Text style={styles.kycActionBtnText}>
-                {currentUser.identityStatus === 'rejected' ? 'Reenviar Fotos del Carnet' : 'Verificar mi Identidad con Carnet'}
+                {currentUser.identityStatus === 'rejected' ? 'Reintentar Verificación con Didit 🛡️' : 'Verificar mi Identidad con Didit 🛡️'}
               </Text>
             </TouchableOpacity>
           </View>
@@ -1257,190 +1344,285 @@ export const UserProfileScreen: React.FC = () => {
               </TouchableOpacity>
             </View>
 
-            <ScrollView showsVerticalScrollIndicator={false} style={{ width: '100%' }}>
-              {/* Información y RUT */}
-              <Text style={styles.fieldLabel}>RUT del Titular: *</Text>
-              <TextInput
-                placeholder="ej: 12.345.678-K"
-                value={idRut}
-                onChangeText={(text) => setIdRut(formatRutChile(text))}
-                style={styles.modalInput}
-                autoCapitalize="characters"
-                maxLength={12}
-              />
-
-              <Text style={styles.fieldLabel}>Número de Documento / Serie (opcional):</Text>
-              <TextInput
-                placeholder="ej: A123456789"
-                value={idDocNumber}
-                onChangeText={setIdDocNumber}
-                style={styles.modalInput}
-                autoCapitalize="characters"
-              />
-
-              {/* Foto 1: Frente del carnet */}
-              <Text style={[styles.fieldLabel, { marginTop: 12 }]}>1. Fotografía Frontal de tu Carnet: *</Text>
-              <Text style={styles.photoFieldHint}>Asegúrate de que tus nombres y RUT se lean con nitidez.</Text>
-              {idFrontUrl ? (
-                <View style={styles.idPreviewContainer}>
-                  <Image source={{ uri: idFrontUrl }} style={styles.idCardPreviewImage} />
-                  <View style={styles.idPreviewActions}>
-                    <TouchableOpacity style={styles.idRetakeBtn} onPress={() => handlePickIdFront(true)}>
-                      <Ionicons name="camera" size={14} color="#0284C7" />
-                      <Text style={styles.idRetakeText}>Cámara</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity style={styles.idRetakeBtn} onPress={() => handlePickIdFront(false)}>
-                      <Ionicons name="image" size={14} color="#0284C7" />
-                      <Text style={styles.idRetakeText}>Galería</Text>
-                    </TouchableOpacity>
-                  </View>
-                </View>
-              ) : (
-                <View style={styles.idUploadButtonsRow}>
-                  <TouchableOpacity style={styles.idUploadBtn} onPress={() => handlePickIdFront(true)}>
-                    <Ionicons name="camera-outline" size={20} color="#0284C7" />
-                    <Text style={styles.idUploadBtnText}>Tomar Foto</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity style={styles.idUploadBtn} onPress={() => handlePickIdFront(false)}>
-                    <Ionicons name="images-outline" size={20} color="#0284C7" />
-                    <Text style={styles.idUploadBtnText}>Subir de Galería</Text>
-                  </TouchableOpacity>
-                </View>
-              )}
-
-              {/* Foto 2: Dorso del carnet */}
-              <Text style={[styles.fieldLabel, { marginTop: 16 }]}>2. Fotografía Posterior (Dorso) del Carnet: *</Text>
-              <Text style={styles.photoFieldHint}>Donde se encuentra la huella y el código del documento.</Text>
-              {idBackUrl ? (
-                <View style={styles.idPreviewContainer}>
-                  <Image source={{ uri: idBackUrl }} style={styles.idCardPreviewImage} />
-                  <View style={styles.idPreviewActions}>
-                    <TouchableOpacity style={styles.idRetakeBtn} onPress={() => handlePickIdBack(true)}>
-                      <Ionicons name="camera" size={14} color="#0284C7" />
-                      <Text style={styles.idRetakeText}>Cámara</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity style={styles.idRetakeBtn} onPress={() => handlePickIdBack(false)}>
-                      <Ionicons name="image" size={14} color="#0284C7" />
-                      <Text style={styles.idRetakeText}>Galería</Text>
-                    </TouchableOpacity>
-                  </View>
-                </View>
-              ) : (
-                <View style={styles.idUploadButtonsRow}>
-                  <TouchableOpacity style={styles.idUploadBtn} onPress={() => handlePickIdBack(true)}>
-                    <Ionicons name="camera-outline" size={20} color="#0284C7" />
-                    <Text style={styles.idUploadBtnText}>Tomar Foto</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity style={styles.idUploadBtn} onPress={() => handlePickIdBack(false)}>
-                    <Ionicons name="images-outline" size={20} color="#0284C7" />
-                    <Text style={styles.idUploadBtnText}>Subir de Galería</Text>
-                  </TouchableOpacity>
-                </View>
-              )}
-
-              {/* Foto 3: Selfie de comprobación */}
-              <Text style={[styles.fieldLabel, { marginTop: 16 }]}>3. Selfie de Verificación (Comprobación Humana):</Text>
-              <Text style={styles.photoFieldHint}>Una foto clara de tu rostro o sosteniendo tu carnet para contrastar la identidad.</Text>
-              {idSelfieUrl ? (
-                <View style={styles.idPreviewContainer}>
-                  <Image source={{ uri: idSelfieUrl }} style={styles.idCardPreviewImage} />
-                  <View style={styles.idPreviewActions}>
-                    <TouchableOpacity style={styles.idRetakeBtn} onPress={() => handlePickIdSelfie(true)}>
-                      <Ionicons name="camera" size={14} color="#0284C7" />
-                      <Text style={styles.idRetakeText}>Cámara</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity style={styles.idRetakeBtn} onPress={() => handlePickIdSelfie(false)}>
-                      <Ionicons name="image" size={14} color="#0284C7" />
-                      <Text style={styles.idRetakeText}>Galería</Text>
-                    </TouchableOpacity>
-                  </View>
-                </View>
-              ) : (
-                <View style={styles.idUploadButtonsRow}>
-                  <TouchableOpacity style={styles.idUploadBtn} onPress={() => handlePickIdSelfie(true)}>
-                    <Ionicons name="camera-outline" size={20} color="#0284C7" />
-                    <Text style={styles.idUploadBtnText}>Tomar Selfie</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity style={styles.idUploadBtn} onPress={() => handlePickIdSelfie(false)}>
-                    <Ionicons name="images-outline" size={20} color="#0284C7" />
-                    <Text style={styles.idUploadBtnText}>Subir de Galería</Text>
-                  </TouchableOpacity>
-                </View>
-              )}
-
-              {/* Aviso de privacidad y confidencialidad */}
-              <View style={styles.privacyNoticeCard}>
-                <Ionicons name="lock-closed" size={18} color="#0284C7" />
-                <Text style={styles.privacyNoticeText}>
-                  Tus documentos solo son revisados por el equipo oficial de validación bajo estrictos estándares de privacidad (Ley N° 19.628). Tu carnet nunca será compartido ni visible para otros tutores.
+            {/* Selector de Pestañas: Didit Automático vs Manual */}
+            <View style={styles.kycTabSelector}>
+              <TouchableOpacity 
+                style={[styles.kycTabButton, kycTab === 'didit' && styles.kycTabButtonActive]} 
+                onPress={() => setKycTab('didit')}
+                activeOpacity={0.8}
+              >
+                <Ionicons name="sparkles" size={15} color={kycTab === 'didit' ? '#FFFFFF' : '#0284C7'} />
+                <Text style={[styles.kycTabButtonText, kycTab === 'didit' && styles.kycTabButtonTextActive]}>
+                  Didit IA (Automático ⚡)
                 </Text>
-              </View>
+              </TouchableOpacity>
+              <TouchableOpacity 
+                style={[styles.kycTabButton, kycTab === 'manual' && styles.kycTabButtonActive]} 
+                onPress={() => setKycTab('manual')}
+                activeOpacity={0.8}
+              >
+                <Ionicons name="document-text-outline" size={15} color={kycTab === 'manual' ? '#FFFFFF' : '#64748B'} />
+                <Text style={[styles.kycTabButtonText, kycTab === 'manual' && styles.kycTabButtonTextActive]}>
+                  Subir Fotos
+                </Text>
+              </TouchableOpacity>
+            </View>
 
-              {/* Si está validando con la IA en tiempo real */}
-              {submittingId ? (
-                <View style={styles.kycScanningOverlay}>
-                  <View style={styles.kycScanSpinnerCircle}>
-                    <ActivityIndicator size="large" color="#0284C7" />
+            <ScrollView showsVerticalScrollIndicator={false} style={{ width: '100%' }}>
+              {kycTab === 'didit' ? (
+                <View style={{ width: '100%', paddingVertical: 4 }}>
+                  {/* Tarjeta Hero Didit */}
+                  <View style={styles.diditHeroCard}>
+                    <View style={styles.diditHeroIconCircle}>
+                      <Ionicons name="shield-checkmark" size={30} color="#0284C7" />
+                    </View>
+                    <Text style={styles.diditHeroTitle}>Validación Oficial Didit KYC</Text>
+                    <Text style={styles.diditHeroSub}>
+                      Estándar biométrico de nivel bancario. Sin esperas manuales y 100% gratuito para la comunidad.
+                    </Text>
+
+                    <View style={styles.diditStepsList}>
+                      <View style={styles.diditStepItem}>
+                        <View style={styles.diditStepNumber}>
+                          <Text style={styles.diditStepNumberText}>1</Text>
+                        </View>
+                        <View style={{ flex: 1 }}>
+                          <Text style={styles.diditStepItemTitle}>Escaneo de Documento</Text>
+                          <Text style={styles.diditStepItemDesc}>
+                            Enfoca tu cédula o pasaporte. La IA detecta bordes y lee los datos automáticamente.
+                          </Text>
+                        </View>
+                      </View>
+
+                      <View style={styles.diditStepItem}>
+                        <View style={styles.diditStepNumber}>
+                          <Text style={styles.diditStepNumberText}>2</Text>
+                        </View>
+                        <View style={{ flex: 1 }}>
+                          <Text style={styles.diditStepItemTitle}>Prueba Facial 3D (Liveness)</Text>
+                          <Text style={styles.diditStepItemDesc}>
+                            Un rápido escaneo facial confirma que eres tú en vivo y previene suplantaciones.
+                          </Text>
+                        </View>
+                      </View>
+
+                      <View style={styles.diditStepItem}>
+                        <View style={styles.diditStepNumber}>
+                          <Text style={styles.diditStepNumberText}>3</Text>
+                        </View>
+                        <View style={{ flex: 1 }}>
+                          <Text style={styles.diditStepItemTitle}>Acreditación Instantánea</Text>
+                          <Text style={styles.diditStepItemDesc}>
+                            Recibes la insignia oficial 🛡️ Tutor Verificado y +50 Huellitas 🐾 de regalo.
+                          </Text>
+                        </View>
+                      </View>
+                    </View>
                   </View>
-                  <Text style={styles.kycScanTitle}>🤖 Validador IA en Ejecución</Text>
-                  <Text style={styles.kycScanSub}>Certificando autenticidad en tiempo real...</Text>
 
-                  <View style={styles.kycScanStepsContainer}>
-                    <View style={styles.kycScanStepRow}>
-                      <Ionicons 
-                        name={kycScanStep >= 1 ? "checkmark-circle" : "ellipse-outline"} 
-                        size={18} 
-                        color={kycScanStep >= 1 ? "#10B981" : "#94A3B8"} 
-                      />
-                      <Text style={[styles.kycScanStepText, kycScanStep >= 1 && styles.kycScanStepTextActive]}>
-                        Validación oficial de RUT (Módulo 11)
+                  {/* Sesión de Didit Activa */}
+                  {activeDiditSessionId ? (
+                    <View style={styles.diditActiveSessionCard}>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+                        <Ionicons name="time" size={18} color="#D97706" />
+                        <Text style={styles.diditActiveSessionTitle}>Sesión de Didit Iniciada</Text>
+                      </View>
+                      <Text style={styles.diditActiveSessionDesc}>
+                        Completa el escaneo en la ventana del navegador. Cuando hayas terminado, pulsa el botón para comprobar el resultado:
                       </Text>
-                    </View>
 
-                    <View style={styles.kycScanStepRow}>
-                      <Ionicons 
-                        name={kycScanStep >= 2 ? "checkmark-circle" : "ellipse-outline"} 
-                        size={18} 
-                        color={kycScanStep >= 2 ? "#10B981" : "#94A3B8"} 
-                      />
-                      <Text style={[styles.kycScanStepText, kycScanStep >= 2 && styles.kycScanStepTextActive]}>
-                        Escaneo de fotos frontal y dorso
-                      </Text>
-                    </View>
+                      <TouchableOpacity 
+                        style={[styles.diditActionBtn, { backgroundColor: '#0284C7', marginBottom: 10 }]}
+                        onPress={handleCheckDiditStatus}
+                        disabled={diditChecking}
+                        activeOpacity={0.88}
+                      >
+                        {diditChecking ? (
+                          <ActivityIndicator size="small" color="#FFFFFF" />
+                        ) : (
+                          <>
+                            <Ionicons name="checkmark-circle" size={18} color="#FFFFFF" />
+                            <Text style={styles.diditActionBtnText}>Comprobar Estado de Verificación 🔄</Text>
+                          </>
+                        )}
+                      </TouchableOpacity>
 
-                    <View style={styles.kycScanStepRow}>
-                      <Ionicons 
-                        name={kycScanStep >= 3 ? "checkmark-circle" : "ellipse-outline"} 
-                        size={18} 
-                        color={kycScanStep >= 3 ? "#10B981" : "#94A3B8"} 
-                      />
-                      <Text style={[styles.kycScanStepText, kycScanStep >= 3 && styles.kycScanStepTextActive]}>
-                        Face-Matching biométrico y selfie
-                      </Text>
-                    </View>
+                      {activeDiditUrl ? (
+                        <TouchableOpacity 
+                          style={styles.diditSecondaryBtn}
+                          onPress={() => openDiditVerificationUrl(activeDiditUrl)}
+                          activeOpacity={0.8}
+                        >
+                          <Ionicons name="open-outline" size={16} color="#0284C7" />
+                          <Text style={styles.diditSecondaryBtnText}>Reabrir Ventana de Didit</Text>
+                        </TouchableOpacity>
+                      ) : null}
 
-                    <View style={styles.kycScanStepRow}>
-                      <Ionicons 
-                        name={kycScanStep >= 4 ? "shield-checkmark" : "ellipse-outline"} 
-                        size={18} 
-                        color={kycScanStep >= 4 ? "#0284C7" : "#94A3B8"} 
-                      />
-                      <Text style={[styles.kycScanStepText, kycScanStep >= 4 && styles.kycScanStepTextActive, kycScanStep >= 4 && { fontWeight: '900', color: '#0284C7' }]}>
-                        ¡Verificación Exitosa (+50 🐾)!
-                      </Text>
+                      <TouchableOpacity 
+                        style={{ marginTop: 12, alignItems: 'center' }}
+                        onPress={handleStartDiditVerification}
+                        disabled={diditLoading}
+                      >
+                        <Text style={{ fontSize: 12, color: '#64748B', textDecorationLine: 'underline' }}>
+                          ¿La sesión expiró? Iniciar una nueva verificación
+                        </Text>
+                      </TouchableOpacity>
                     </View>
+                  ) : (
+                    <TouchableOpacity 
+                      style={[styles.diditActionBtn, { backgroundColor: '#0284C7', marginVertical: 14 }]}
+                      onPress={handleStartDiditVerification}
+                      disabled={diditLoading}
+                      activeOpacity={0.88}
+                    >
+                      {diditLoading ? (
+                        <ActivityIndicator size="small" color="#FFFFFF" />
+                      ) : (
+                        <>
+                          <Ionicons name="shield-checkmark" size={18} color="#FFFFFF" />
+                          <Text style={styles.diditActionBtnText}>Iniciar Verificación con Didit 🚀</Text>
+                        </>
+                      )}
+                    </TouchableOpacity>
+                  )}
+
+                  {/* Garantía de privacidad */}
+                  <View style={styles.privacyNoticeCard}>
+                    <Ionicons name="lock-closed" size={16} color="#0284C7" />
+                    <Text style={styles.privacyNoticeText}>
+                      Tus datos biométricos están protegidos con cifrado de grado militar según la Ley N° 19.628 y estándares internacionales GDPR. Tus fotos nunca serán públicas.
+                    </Text>
                   </View>
                 </View>
               ) : (
-                <TouchableOpacity 
-                  style={styles.submitIdentityBtn}
-                  onPress={handleSubmitIdentity}
-                >
-                  <Ionicons name="sparkles" size={18} color="#FFFFFF" />
-                  <Text style={styles.submitIdentityBtnText}>
-                    Validar con IA Automática (Gratis ⚡)
-                  </Text>
-                </TouchableOpacity>
+                <View style={{ width: '100%', paddingVertical: 4 }}>
+                  {/* Información y RUT */}
+                  <Text style={styles.fieldLabel}>RUT del Titular: *</Text>
+                  <TextInput
+                    placeholder="ej: 12.345.678-K"
+                    value={idRut}
+                    onChangeText={(text) => setIdRut(formatRutChile(text))}
+                    style={styles.modalInput}
+                    autoCapitalize="characters"
+                    maxLength={12}
+                  />
+
+                  <Text style={styles.fieldLabel}>Número de Documento / Serie (opcional):</Text>
+                  <TextInput
+                    placeholder="ej: A123456789"
+                    value={idDocNumber}
+                    onChangeText={setIdDocNumber}
+                    style={styles.modalInput}
+                    autoCapitalize="characters"
+                  />
+
+                  {/* Foto 1: Frente del carnet */}
+                  <Text style={[styles.fieldLabel, { marginTop: 12 }]}>1. Fotografía Frontal de tu Carnet: *</Text>
+                  <Text style={styles.photoFieldHint}>Asegúrate de que tus nombres y RUT se lean con nitidez.</Text>
+                  {idFrontUrl ? (
+                    <View style={styles.idPreviewContainer}>
+                      <Image source={{ uri: idFrontUrl }} style={styles.idCardPreviewImage} />
+                      <View style={styles.idPreviewActions}>
+                        <TouchableOpacity style={styles.idRetakeBtn} onPress={() => handlePickIdFront(true)}>
+                          <Ionicons name="camera" size={14} color="#0284C7" />
+                          <Text style={styles.idRetakeText}>Cámara</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity style={styles.idRetakeBtn} onPress={() => handlePickIdFront(false)}>
+                          <Ionicons name="image" size={14} color="#0284C7" />
+                          <Text style={styles.idRetakeText}>Galería</Text>
+                        </TouchableOpacity>
+                      </View>
+                    </View>
+                  ) : (
+                    <View style={styles.idUploadButtonsRow}>
+                      <TouchableOpacity style={styles.idUploadBtn} onPress={() => handlePickIdFront(true)}>
+                        <Ionicons name="camera-outline" size={20} color="#0284C7" />
+                        <Text style={styles.idUploadBtnText}>Tomar Foto</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity style={styles.idUploadBtn} onPress={() => handlePickIdFront(false)}>
+                        <Ionicons name="images-outline" size={20} color="#0284C7" />
+                        <Text style={styles.idUploadBtnText}>Subir de Galería</Text>
+                      </TouchableOpacity>
+                    </View>
+                  )}
+
+                  {/* Foto 2: Dorso del carnet */}
+                  <Text style={[styles.fieldLabel, { marginTop: 16 }]}>2. Fotografía Posterior (Dorso) del Carnet: *</Text>
+                  <Text style={styles.photoFieldHint}>Donde se encuentra la huella y el código del documento.</Text>
+                  {idBackUrl ? (
+                    <View style={styles.idPreviewContainer}>
+                      <Image source={{ uri: idBackUrl }} style={styles.idCardPreviewImage} />
+                      <View style={styles.idPreviewActions}>
+                        <TouchableOpacity style={styles.idRetakeBtn} onPress={() => handlePickIdBack(true)}>
+                          <Ionicons name="camera" size={14} color="#0284C7" />
+                          <Text style={styles.idRetakeText}>Cámara</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity style={styles.idRetakeBtn} onPress={() => handlePickIdBack(false)}>
+                          <Ionicons name="image" size={14} color="#0284C7" />
+                          <Text style={styles.idRetakeText}>Galería</Text>
+                        </TouchableOpacity>
+                      </View>
+                    </View>
+                  ) : (
+                    <View style={styles.idUploadButtonsRow}>
+                      <TouchableOpacity style={styles.idUploadBtn} onPress={() => handlePickIdBack(true)}>
+                        <Ionicons name="camera-outline" size={20} color="#0284C7" />
+                        <Text style={styles.idUploadBtnText}>Tomar Foto</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity style={styles.idUploadBtn} onPress={() => handlePickIdBack(false)}>
+                        <Ionicons name="images-outline" size={20} color="#0284C7" />
+                        <Text style={styles.idUploadBtnText}>Subir de Galería</Text>
+                      </TouchableOpacity>
+                    </View>
+                  )}
+
+                  {/* Foto 3: Selfie de comprobación */}
+                  <Text style={[styles.fieldLabel, { marginTop: 16 }]}>3. Selfie de Verificación (Comprobación Humana):</Text>
+                  <Text style={styles.photoFieldHint}>Una foto clara de tu rostro o sosteniendo tu carnet para contrastar la identidad.</Text>
+                  {idSelfieUrl ? (
+                    <View style={styles.idPreviewContainer}>
+                      <Image source={{ uri: idSelfieUrl }} style={styles.idCardPreviewImage} />
+                      <View style={styles.idPreviewActions}>
+                        <TouchableOpacity style={styles.idRetakeBtn} onPress={() => handlePickIdSelfie(true)}>
+                          <Ionicons name="camera" size={14} color="#0284C7" />
+                          <Text style={styles.idRetakeText}>Cámara</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity style={styles.idRetakeBtn} onPress={() => handlePickIdSelfie(false)}>
+                          <Ionicons name="image" size={14} color="#0284C7" />
+                          <Text style={styles.idRetakeText}>Galería</Text>
+                        </TouchableOpacity>
+                      </View>
+                    </View>
+                  ) : (
+                    <View style={styles.idUploadButtonsRow}>
+                      <TouchableOpacity style={styles.idUploadBtn} onPress={() => handlePickIdSelfie(true)}>
+                        <Ionicons name="camera-outline" size={20} color="#0284C7" />
+                        <Text style={styles.idUploadBtnText}>Tomar Selfie</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity style={styles.idUploadBtn} onPress={() => handlePickIdSelfie(false)}>
+                        <Ionicons name="images-outline" size={20} color="#0284C7" />
+                        <Text style={styles.idUploadBtnText}>Subir de Galería</Text>
+                      </TouchableOpacity>
+                    </View>
+                  )}
+
+                  <TouchableOpacity 
+                    style={[styles.submitIdentityBtn, { marginTop: 20 }]}
+                    onPress={handleSubmitIdentityManual}
+                    disabled={submittingId}
+                  >
+                    {submittingId ? (
+                      <ActivityIndicator size="small" color="#FFFFFF" />
+                    ) : (
+                      <>
+                        <Ionicons name="send" size={16} color="#FFFFFF" />
+                        <Text style={styles.submitIdentityBtnText}>
+                          Enviar Fotos para Revisión Manual
+                        </Text>
+                      </>
+                    )}
+                  </TouchableOpacity>
+                </View>
               )}
             </ScrollView>
           </View>
@@ -2600,59 +2782,162 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     color: '#FFFFFF',
   },
-  kycScanningOverlay: {
-    backgroundColor: '#F8FAFC',
+  kycTabSelector: {
+    flexDirection: 'row',
+    backgroundColor: '#F1F5F9',
+    borderRadius: 12,
+    padding: 4,
+    marginBottom: 16,
+    gap: 6,
+  },
+  kycTabButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 10,
+    borderRadius: 8,
+    gap: 6,
+  },
+  kycTabButtonActive: {
+    backgroundColor: '#0284C7',
+    shadowColor: '#0284C7',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  kycTabButtonText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#64748B',
+  },
+  kycTabButtonTextActive: {
+    color: '#FFFFFF',
+    fontWeight: '800',
+  },
+  diditHeroCard: {
+    backgroundColor: '#F0F9FF',
     borderRadius: 16,
     padding: 16,
     alignItems: 'center',
-    marginVertical: 14,
     borderWidth: 1.5,
     borderColor: '#BAE6FD',
   },
-  kycScanSpinnerCircle: {
-    width: 54,
-    height: 54,
-    borderRadius: 27,
+  diditHeroIconCircle: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
     backgroundColor: '#E0F2FE',
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 10,
   },
-  kycScanTitle: {
-    fontSize: 15,
-    fontWeight: '800',
+  diditHeroTitle: {
+    fontSize: 16,
+    fontWeight: '900',
     color: '#0F172A',
-    marginBottom: 2,
-  },
-  kycScanSub: {
-    fontSize: 12,
-    color: '#64748B',
-    marginBottom: 14,
+    marginBottom: 4,
     textAlign: 'center',
   },
-  kycScanStepsContainer: {
+  diditHeroSub: {
+    fontSize: 12,
+    color: '#64748B',
+    textAlign: 'center',
+    lineHeight: 18,
+    marginBottom: 16,
+  },
+  diditStepsList: {
     width: '100%',
     backgroundColor: '#FFFFFF',
     borderRadius: 12,
     padding: 12,
-    gap: 10,
+    gap: 12,
     borderWidth: 1,
     borderColor: '#E2E8F0',
   },
-  kycScanStepRow: {
+  diditStepItem: {
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     gap: 10,
   },
-  kycScanStepText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#94A3B8',
-    flex: 1,
+  diditStepNumber: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: '#0284C7',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 2,
   },
-  kycScanStepTextActive: {
+  diditStepNumberText: {
+    fontSize: 12,
+    fontWeight: '900',
+    color: '#FFFFFF',
+  },
+  diditStepItemTitle: {
+    fontSize: 13,
+    fontWeight: '800',
     color: '#0F172A',
+    marginBottom: 2,
+  },
+  diditStepItemDesc: {
+    fontSize: 11,
+    color: '#64748B',
+    lineHeight: 15,
+  },
+  diditActiveSessionCard: {
+    backgroundColor: '#FFFBEB',
+    borderRadius: 14,
+    padding: 14,
+    borderWidth: 1.5,
+    borderColor: '#FDE68A',
+    marginVertical: 14,
+  },
+  diditActiveSessionTitle: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: '#92400E',
+  },
+  diditActiveSessionDesc: {
+    fontSize: 12,
+    color: '#78350F',
+    lineHeight: 17,
+    marginBottom: 12,
+  },
+  diditActionBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 14,
+    borderRadius: 14,
+    gap: 8,
+    shadowColor: '#0284C7',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 5,
+    elevation: 3,
+  },
+  diditActionBtnText: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: '#FFFFFF',
+  },
+  diditSecondaryBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#F0F9FF',
+    borderWidth: 1,
+    borderColor: '#BAE6FD',
+    paddingVertical: 10,
+    borderRadius: 12,
+    gap: 6,
+  },
+  diditSecondaryBtnText: {
+    fontSize: 12,
     fontWeight: '700',
+    color: '#0284C7',
   },
   appVersionFooter: {
     alignItems: 'center',

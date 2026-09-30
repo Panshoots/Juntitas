@@ -82,8 +82,7 @@ export const formatRutChile = (rawRut: string): string => {
  * Enviar solicitud de verificación de identidad oficial con cédula
  */
 /**
- * Envío y Validación Automática de Identidad (Validador IA Gratuito 100% Automático)
- * Valida RUT mediante Módulo 11, certifica las fotos e inmediatamente aprueba y premia al tutor.
+ * Envío de solicitud para revisión manual con fotos de carnet
  */
 export const submitIdentityVerification = async (
   userId: string,
@@ -94,15 +93,12 @@ export const submitIdentityVerification = async (
     backIdCardUrl: string;
     selfieUrl?: string;
   }
-): Promise<{ success: boolean; message: string; updatedUser?: AppUser; isAutoVerified?: boolean }> => {
+): Promise<{ success: boolean; message: string; updatedUser?: AppUser }> => {
   if (!payload.frontIdCardUrl || !payload.backIdCardUrl) {
     return { success: false, message: 'Debes adjuntar ambas fotografías de tu carnet (frente y dorso).' };
   }
 
-  const formattedRut = formatRutChile(payload.rut);
-  if (!validateRutChile(formattedRut)) {
-    return { success: false, message: 'El RUT ingresado no es válido según el registro oficial chileno. Revisa los dígitos e inténtalo de nuevo.' };
-  }
+  const formattedRut = formatRutChile(payload.rut) || payload.rut;
 
   const now = new Date();
   const identityData: IdentityVerificationData = {
@@ -112,25 +108,21 @@ export const submitIdentityVerification = async (
     backIdCardUrl: payload.backIdCardUrl,
     selfieUrl: payload.selfieUrl,
     submittedAt: now,
-    reviewedAt: now,
-    reviewedBy: 'AI_AUTO_VALIDATOR',
-    verificationMethod: 'auto_ai'
+    verificationMethod: 'manual'
   };
 
   try {
     const userRef = doc(db, 'users', userId);
     await updateDoc(userRef, cleanUndefined({
-      isIdentityVerified: true,
-      identityStatus: 'verified',
+      identityStatus: 'pending',
       identityData: {
         ...identityData,
-        submittedAt: serverTimestamp(),
-        reviewedAt: serverTimestamp()
+        submittedAt: serverTimestamp()
       },
       updatedAt: serverTimestamp()
     }));
   } catch (err) {
-    console.warn('Error guardando verificación automática en Firestore, usando caché local:', err);
+    console.warn('Error guardando verificación manual en Firestore:', err);
   }
 
   // Actualizar en caché local
@@ -138,42 +130,30 @@ export const submitIdentityVerification = async (
   const targetUser = users.find(u => u.id === userId);
   let updatedUser: AppUser | undefined;
   if (targetUser) {
-    targetUser.isIdentityVerified = true;
-    targetUser.identityStatus = 'verified';
+    targetUser.identityStatus = 'pending';
     targetUser.identityData = identityData;
     targetUser.updatedAt = now;
     updatedUser = { ...targetUser };
   }
 
-  // Bonificación por verificar identidad (+50 Huellitas 🐾)
-  await awardPaws(userId, 'account_verified', userId);
-
   await logAuditAction(
     userId,
-    'IDENTITY_VERIFICATION_AUTO_APPROVE',
+    'IDENTITY_VERIFICATION_SUBMITTED',
     'users',
     userId,
-    `Identidad verificada exitosamente de forma 100% automática por IA (RUT: ${formattedRut})`
+    `Solicitud de verificación manual enviada (RUT: ${formattedRut})`
   );
 
-  // 1. Notificar al tutor de su acreditación inmediata
-  await sendNotificationToUser(userId, {
-    title: '🛡️ ¡Identidad Verificada con Éxito!',
-    message: 'Tus documentos y tu RUT fueron analizados y validados por nuestro sistema automático. Has recibido +50 Huellitas y tu insignia oficial de Tutor Verificado.',
-    type: 'identity_verified'
-  });
-
-  // 2. Notificar al Super Administrador en el CRM a modo informativo
-  await sendNotificationToUser('superadmin-user', {
-    title: '🤖 Tutor Verificado Automáticamente',
-    message: `${targetUser?.displayName || 'Tutor'} (RUT: ${formattedRut}) completó la validación biométrica automática con éxito.`,
-    type: 'identity_verified'
-  });
+  // Notificar al Super Administrador en el CRM
+  await notifySuperAdminOfNewIdentityVerification(
+    targetUser?.displayName || 'Tutor',
+    userId,
+    formattedRut
+  );
 
   return { 
     success: true, 
-    isAutoVerified: true,
-    message: '¡Identidad verificada automáticamente con éxito! Ya tienes tu insignia oficial y +50 Huellitas.',
+    message: 'Tus fotos fueron enviadas con éxito. El equipo revisará tus documentos en breve.',
     updatedUser
   };
 };
