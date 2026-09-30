@@ -2,10 +2,10 @@ import { Platform } from 'react-native';
 import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from '../firebase/config';
 
-export const APP_VERSION = '1.2.0';
-export const BUILD_NUMBER = 2;
-export const RELEASE_DATE = '28 Septiembre 2026';
-export const RELEASE_NOTES = 'Verificación de Identidad por IA 100% Gratuita (KYC con Carnet Chileno), Insignia de Tutor Verificado y Sincronización Automática.';
+export const APP_VERSION = '1.2.1';
+export const BUILD_NUMBER = 3;
+export const RELEASE_DATE = '29 Septiembre 2026';
+export const RELEASE_NOTES = 'Integración con Didit Protocol KYC (Identidad Digital con IA, OCR y Biometría 3D), Eliminación de temporizadores artificiales y Sincronización Automática.';
 
 export interface AppVersionInfo {
   currentVersion: string;
