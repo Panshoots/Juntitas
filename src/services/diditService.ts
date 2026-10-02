@@ -1,5 +1,5 @@
 import { Linking } from 'react-native';
-import { doc, getDoc, updateDoc, serverTimestamp } from 'firebase/firestore';
+import { doc, getDoc, setDoc, updateDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from '../firebase/config';
 import { AppUser, IdentityVerificationData } from '../models/User';
 import { awardPaws } from './gamificationService';
@@ -9,18 +9,18 @@ import { cleanUndefined, getUsersFromDb } from './userService';
 
 /**
  * CONFIGURACIÓN DE DIDIT IDENTITY VERIFICATION (https://didit.me)
- * Puedes ingresar aquí tus credenciales de https://business.didit.me
+ * Credenciales de https://business.didit.me
  * Plan Gratuito: 500 verificaciones KYC completas al mes ($0/mes, sin tarjeta)
  */
 export const DEFAULT_DIDIT_CONFIG = {
-  // Pega aquí tu API Key de Didit (Settings -> API Keys)
-  apiKey: '', 
-  // Pega aquí tu Workflow ID de Didit (Workflows -> Copy ID)
-  workflowId: '', 
+  // API Key de Didit (Settings -> API Keys)
+  apiKey: '_Y1_g-gIsU28yeztBVqEMq6esAdVOTgAVCl9aUleo4A', 
+  // Workflow ID de Didit (Free KYC: OCR + Liveness + Face Match + IP Analysis)
+  workflowId: '8b306795-b97b-4755-ae6e-57570fbc9fc5', 
   // URL base de la API de Didit
   baseUrl: 'https://verification.didit.me/v3',
   // Modo Sandbox/Demo habilitado si no se ha configurado la API Key
-  enableSandboxFallback: true
+  enableSandboxFallback: false
 };
 
 export interface DiditSessionResponse {
@@ -68,6 +68,25 @@ export const getDiditConfig = async () => {
 };
 
 /**
+ * Guarda o actualiza credenciales de Didit en Firestore
+ */
+export const saveDiditConfig = async (apiKey: string, workflowId: string) => {
+  try {
+    await setDoc(doc(db, 'app_config', 'didit_settings'), {
+      apiKey,
+      workflowId,
+      baseUrl: 'https://verification.didit.me/v3',
+      enableSandboxFallback: false,
+      updatedAt: serverTimestamp()
+    }, { merge: true });
+    return { success: true, message: 'Configuración de Didit guardada en Firestore.' };
+  } catch (err) {
+    console.warn('Error guardando configuración de Didit en Firestore:', err);
+    return { success: false, message: 'No se pudo guardar en Firestore.' };
+  }
+};
+
+/**
  * 1. Crear una sesión de verificación de identidad con Didit
  * Llama al endpoint POST /v3/session/ de Didit
  */
@@ -80,7 +99,7 @@ export const createDiditSession = async (
     const config = await getDiditConfig();
 
     // Si no hay API Key configurada y está activo el Sandbox Fallback, se genera sesión de demostración
-    if (!config.apiKey || !config.workflowId) {
+    if (!config.apiKey) {
       console.log('Didit: Sin API Key configurada. Utilizando flujo sandbox de demostración.');
       const demoSessionId = `didit_sandbox_${userId}_${Date.now()}`;
       
@@ -92,29 +111,57 @@ export const createDiditSession = async (
         sessionId: demoSessionId,
         url: 'https://demos.didit.me',
         isSandbox: true,
-        message: 'Sesión Didit Sandbox lista. Para producción, agrega tu API Key de Didit.'
+        message: 'Sesión Didit Sandbox lista.'
       };
     }
 
-    const payload = {
-      workflow_id: config.workflowId,
-      vendor_data: userId,
-      callback: 'https://juntitas.app/kyc-callback',
-      metadata: {
-        userId,
-        email: userEmail || '',
-        name: userName || ''
+    let activeWorkflowId = config.workflowId;
+
+    const makeSessionRequest = async (wfId: string) => {
+      const payload: any = {
+        workflow_id: wfId,
+        vendor_data: userId,
+        callback: 'https://juntitas-47e8d.web.app'
+      };
+      if (userEmail || userName) {
+        payload.metadata = {
+          userId,
+          email: userEmail || '',
+          name: userName || ''
+        };
       }
+      return await fetch(`${config.baseUrl}/session/`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-api-key': config.apiKey
+        },
+        body: JSON.stringify(payload)
+      });
     };
 
-    const response = await fetch(`${config.baseUrl}/session/`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': config.apiKey
-      },
-      body: JSON.stringify(payload)
-    });
+    let response = await makeSessionRequest(activeWorkflowId);
+
+    // Si falla por workflow inválido, consultamos los workflows de la cuenta automáticamente
+    if (!response.ok) {
+      try {
+        const wfRes = await fetch(`${config.baseUrl}/workflows/`, {
+          headers: { 'x-api-key': config.apiKey }
+        });
+        if (wfRes.ok) {
+          const wfData = await wfRes.json();
+          const autoWf = wfData.results?.find((w: any) => w.is_default && !w.is_archived) || 
+                         wfData.results?.find((w: any) => w.workflow_type === 'kyc') ||
+                         wfData.results?.[0];
+          if (autoWf && autoWf.workflow_id !== activeWorkflowId) {
+            activeWorkflowId = autoWf.workflow_id;
+            response = await makeSessionRequest(activeWorkflowId);
+          }
+        }
+      } catch (e) {
+        console.warn('Error auto-detectando workflow en Didit:', e);
+      }
+    }
 
     if (!response.ok) {
       const errorText = await response.text();
@@ -247,16 +294,19 @@ export const checkDiditSessionDecision = async (
     const statusStr = (data.status || data.decision || '').toLowerCase();
 
     if (statusStr === 'approved' || statusStr === 'success') {
+      const idVerif = Array.isArray(data.id_verifications) ? data.id_verifications[0] : null;
+      const docData = idVerif?.document_details || data.document || data.extracted_data || {};
+
       return {
         success: true,
         status: 'Approved',
         message: '¡Verificación completada y aprobada por Didit con éxito!',
         documentData: {
-          rut: data.document?.id_number || data.extracted_data?.id_number || '',
-          documentNumber: data.document?.document_number || '',
-          fullName: data.document?.full_name || `${data.document?.first_name || ''} ${data.document?.last_name || ''}`.trim(),
-          documentType: data.document?.document_type || 'ID_CARD',
-          country: data.document?.country || 'CL'
+          rut: docData.id_number || docData.personal_number || docData.document_number || '',
+          documentNumber: docData.document_number || '',
+          fullName: docData.full_name || `${docData.first_name || ''} ${docData.last_name || ''}`.trim() || 'Tutor Verificado Didit',
+          documentType: docData.document_type || 'ID_CARD',
+          country: docData.country || 'CL'
         }
       };
     } else if (statusStr === 'declined' || statusStr === 'rejected') {
