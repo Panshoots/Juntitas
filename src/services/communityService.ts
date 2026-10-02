@@ -6,6 +6,9 @@ import {
   setDoc, 
   addDoc, 
   updateDoc, 
+  deleteDoc,
+  query,
+  where,
   serverTimestamp,
   arrayUnion,
   increment
@@ -909,3 +912,61 @@ export const updateCommunityPhotosAndInfo = async (
 
   return { success: true, message: '¡Foto e información de la comunidad actualizadas exitosamente!' };
 };
+
+export const deleteCommunityInDb = async (
+  communityId: string,
+  adminUserId: string,
+  reason: string = 'Eliminación administrativa desde CRM'
+): Promise<{ success: boolean; message: string }> => {
+  try {
+    // 1. Eliminar eventos de esta comunidad
+    const eventsQuery = query(collection(db, 'events'), where('communityId', '==', communityId));
+    const eventsSnap = await getDocs(eventsQuery);
+    const deleteEventPromises = eventsSnap.docs.map(d => deleteDoc(d.ref));
+    await Promise.all(deleteEventPromises);
+
+    // 2. Eliminar documento de comunidad en Firestore
+    await deleteDoc(doc(db, 'communities', communityId));
+  } catch (err) {
+    console.warn('Error eliminando comunidad de Firestore:', err);
+  }
+
+  // 3. Eliminar de la caché local
+  localCommunities = localCommunities.filter(c => c.id !== communityId);
+
+  // 4. Registrar auditoría
+  await logAuditAction(
+    adminUserId,
+    'COMMUNITY_PERMANENT_DELETE',
+    'communities',
+    communityId,
+    reason,
+    { deletedCommunityId: communityId }
+  );
+
+  return { success: true, message: 'Comunidad eliminada permanentemente de la base de datos.' };
+};
+
+export const deleteCommunityRequestInDb = async (
+  requestId: string,
+  adminUserId: string
+): Promise<{ success: boolean; message: string }> => {
+  try {
+    await deleteDoc(doc(db, 'communityRequests', requestId));
+  } catch (err) {
+    console.warn('Error eliminando solicitud de comunidad en Firestore:', err);
+  }
+
+  localRequests = localRequests.filter(r => r.id !== requestId);
+
+  await logAuditAction(
+    adminUserId,
+    'COMMUNITY_REQUEST_DELETE',
+    'communityRequests',
+    requestId,
+    'Solicitud eliminada desde CRM'
+  );
+
+  return { success: true, message: 'Solicitud eliminada exitosamente.' };
+};
+

@@ -5,7 +5,9 @@ import {
   getDoc, 
   setDoc, 
   updateDoc, 
+  deleteDoc,
   query, 
+  where,
   orderBy, 
   serverTimestamp 
 } from 'firebase/firestore';
@@ -214,4 +216,38 @@ export const getUserByIdFromDb = async (userId: string): Promise<AppUser | null>
     console.warn('Error fetching user by id:', e);
   }
   return localUsers.find(u => u.id === userId) || null;
+};
+
+export const deleteUserInDb = async (
+  userId: string, 
+  adminUserId: string,
+  reason: string = 'Eliminación administrativa desde CRM'
+): Promise<{ success: boolean; message: string }> => {
+  try {
+    // 1. Eliminar perritos asociados al usuario
+    const dogsQuery = query(collection(db, 'dogs'), where('ownerId', '==', userId));
+    const dogsSnap = await getDocs(dogsQuery);
+    const deletePromises = dogsSnap.docs.map(d => deleteDoc(d.ref));
+    await Promise.all(deletePromises);
+
+    // 2. Eliminar documento del usuario en Firestore
+    await deleteDoc(doc(db, 'users', userId));
+  } catch (err) {
+    console.warn('Error eliminando usuario de Firestore:', err);
+  }
+
+  // 3. Eliminar de la caché local
+  localUsers = localUsers.filter(u => u.id !== userId);
+
+  // 4. Registrar auditoría
+  await logAuditAction(
+    adminUserId,
+    'USER_DELETE_PERMANENT',
+    'users',
+    userId,
+    reason,
+    { deletedUserId: userId }
+  );
+
+  return { success: true, message: 'Usuario y sus perritos eliminados permanentemente.' };
 };

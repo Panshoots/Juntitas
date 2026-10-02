@@ -23,13 +23,16 @@ import {
   getUsersFromDb, 
   updateUserStatusInDb, 
   updateUserRoleInDb, 
-  updateUserDetailsInDb 
+  updateUserDetailsInDb,
+  deleteUserInDb
 } from '../services/userService';
 import { 
   getCommunityRequests, 
   approveCommunityRequest, 
   rejectCommunityRequest,
-  getCommunities 
+  getCommunities,
+  deleteCommunityInDb,
+  deleteCommunityRequestInDb
 } from '../services/communityService';
 import { getAuditLogs, logAuditAction } from '../services/auditService';
 import { 
@@ -133,6 +136,16 @@ export const SuperAdminPanelScreen: React.FC = () => {
   const [cancelEventReason, setCancelEventReason] = useState('');
   const [showEventStatusModal, setShowEventStatusModal] = useState(false);
   const [selectedNewEventStatus, setSelectedNewEventStatus] = useState<EventStatus>('programada');
+
+  // Modal de Confirmación de Eliminación Definitiva (Hard Delete)
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [itemToDelete, setItemToDelete] = useState<{
+    type: 'user' | 'community' | 'communityRequest' | 'event';
+    id: string;
+    name: string;
+    extra?: string;
+  } | null>(null);
+  const [isDeletingItem, setIsDeletingItem] = useState(false);
 
   useEffect(() => {
     loadAllCrmData();
@@ -343,13 +356,57 @@ export const SuperAdminPanelScreen: React.FC = () => {
     loadAllCrmData();
   };
 
-  const handleDeleteEvent = async (ev: DogEvent) => {
-    const confirmDelete = window ? window.confirm(`⚠️ ¿Deseas ELIMINAR definitivamente la junta "${ev.title}"? Esta acción removerá el evento por completo.`) : true;
-    if (!confirmDelete) return;
+  const handleOpenDeleteModal = (
+    type: 'user' | 'community' | 'communityRequest' | 'event',
+    id: string,
+    name: string,
+    extra?: string
+  ) => {
+    setItemToDelete({ type, id, name, extra });
+    setShowDeleteModal(true);
+  };
 
-    const res = await deleteEventInDb(ev.id, 'Eliminación administrativa desde panel CRM', currentUser.id);
-    showToast(res.message, res.success ? 'success' : 'error');
-    loadAllCrmData();
+  const handleExecuteDelete = async () => {
+    if (!itemToDelete) return;
+    setIsDeletingItem(true);
+    try {
+      if (itemToDelete.type === 'user') {
+        const res = await deleteUserInDb(
+          itemToDelete.id,
+          currentUser.id,
+          'Eliminación permanente solicitada por SuperAdmin desde CRM'
+        );
+        showToast(res.message, res.success ? 'success' : 'error');
+      } else if (itemToDelete.type === 'community') {
+        const res = await deleteCommunityInDb(
+          itemToDelete.id,
+          currentUser.id,
+          'Eliminación de comunidad solicitada por SuperAdmin desde CRM'
+        );
+        showToast(res.message, res.success ? 'success' : 'error');
+      } else if (itemToDelete.type === 'communityRequest') {
+        const res = await deleteCommunityRequestInDb(itemToDelete.id, currentUser.id);
+        showToast(res.message, res.success ? 'success' : 'error');
+      } else if (itemToDelete.type === 'event') {
+        const res = await deleteEventInDb(
+          itemToDelete.id,
+          'Eliminación administrativa desde panel CRM',
+          currentUser.id
+        );
+        showToast(res.message, res.success ? 'success' : 'error');
+      }
+      setShowDeleteModal(false);
+      setItemToDelete(null);
+      await loadAllCrmData();
+    } catch (e: any) {
+      showToast(e.message || 'Error al eliminar el elemento', 'error');
+    } finally {
+      setIsDeletingItem(false);
+    }
+  };
+
+  const handleDeleteEvent = (ev: DogEvent) => {
+    handleOpenDeleteModal('event', ev.id, ev.title, ev.communityName ? `Comunidad: ${ev.communityName}` : undefined);
   };
 
   // Filtrado de usuarios
@@ -738,6 +795,15 @@ export const SuperAdminPanelScreen: React.FC = () => {
                       <Ionicons name="pencil" size={14} color="#475569" />
                       <Text style={[styles.actionBtnText, { color: '#475569' }]}>Editar</Text>
                     </TouchableOpacity>
+
+                    {/* Eliminar Definitivamente */}
+                    <TouchableOpacity 
+                      style={styles.actionBtnDeleteUser} 
+                      onPress={() => handleOpenDeleteModal('user', item.id, item.displayName, item.email)}
+                    >
+                      <Ionicons name="trash-outline" size={14} color="#DC2626" />
+                      <Text style={[styles.actionBtnText, { color: '#DC2626' }]}>Eliminar</Text>
+                    </TouchableOpacity>
                   </View>
                 </View>
               );
@@ -771,7 +837,7 @@ export const SuperAdminPanelScreen: React.FC = () => {
 
                 <View style={{ flexDirection: 'row', gap: 10, marginTop: 8 }}>
                   <TouchableOpacity 
-                    style={[styles.approveReqBtn, { flex: 1 }]} 
+                    style={[styles.approveReqBtn, { flex: 2 }]} 
                     onPress={() => handleApproveCommunity(req.id)}
                   >
                     <Ionicons name="checkmark-circle" size={16} color="#FFFFFF" />
@@ -779,11 +845,18 @@ export const SuperAdminPanelScreen: React.FC = () => {
                   </TouchableOpacity>
 
                   <TouchableOpacity 
-                    style={[styles.rejectReqBtn, { flex: 1 }]} 
+                    style={[styles.rejectReqBtn, { flex: 2 }]} 
                     onPress={() => handleRejectCommunity(req.id)}
                   >
                     <Ionicons name="close-circle" size={16} color="#DC2626" />
                     <Text style={styles.rejectReqBtnText}>Rechazar</Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity 
+                    style={styles.deleteReqBtn} 
+                    onPress={() => handleOpenDeleteModal('communityRequest', req.id, req.communityName, `Solicitante: ${req.applicantName}`)}
+                  >
+                    <Ionicons name="trash-outline" size={16} color="#DC2626" />
                   </TouchableOpacity>
                 </View>
               </View>
@@ -793,8 +866,17 @@ export const SuperAdminPanelScreen: React.FC = () => {
           <Text style={[styles.subSectionTitle, { marginTop: 24 }]}>Comunidades Aprobadas ({communities.length})</Text>
           {communities.map(c => (
             <View key={c.id} style={styles.approvedCommCard}>
-              <Text style={styles.approvedCommName}>{c.name}</Text>
-              <Text style={styles.approvedCommMeta}>📍 {c.comuna} • {c.membersCount} miembros</Text>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.approvedCommName}>{c.name}</Text>
+                <Text style={styles.approvedCommMeta}>📍 {c.comuna} • {c.membersCount} miembros</Text>
+              </View>
+              <TouchableOpacity 
+                style={styles.deleteCommBtn}
+                onPress={() => handleOpenDeleteModal('community', c.id, c.name, `Comuna: ${c.comuna} • ${c.membersCount} miembros`)}
+              >
+                <Ionicons name="trash-outline" size={14} color="#DC2626" />
+                <Text style={styles.deleteCommBtnText}>Eliminar</Text>
+              </TouchableOpacity>
             </View>
           ))}
         </ScrollView>
@@ -1464,6 +1546,74 @@ export const SuperAdminPanelScreen: React.FC = () => {
           </View>
         </View>
       </Modal>
+
+      {/* MODAL: CONFIRMAR ELIMINACIÓN DEFINITIVA (HARD DELETE) */}
+      <Modal visible={showDeleteModal} transparent animationType="fade">
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalCard, styles.deleteConfirmModalCard]}>
+            <View style={styles.deleteIconCircle}>
+              <Ionicons name="trash" size={32} color="#DC2626" />
+            </View>
+
+            <Text style={styles.deleteModalTitle}>
+              ¿Eliminar definitivamente?
+            </Text>
+
+            <Text style={styles.deleteModalSub}>
+              Estás a punto de borrar permanentemente de la base de datos:
+            </Text>
+
+            <View style={styles.deleteTargetBox}>
+              <Text style={styles.deleteTargetType}>
+                {itemToDelete?.type === 'user' ? '👤 USUARIO' :
+                 itemToDelete?.type === 'community' ? '🐾 COMUNIDAD' :
+                 itemToDelete?.type === 'communityRequest' ? '📋 SOLICITUD DE COMUNIDAD' :
+                 '📅 JUNTA CANINA'}
+              </Text>
+              <Text style={styles.deleteTargetName}>{itemToDelete?.name}</Text>
+              {itemToDelete?.extra ? (
+                <Text style={styles.deleteTargetExtra}>{itemToDelete.extra}</Text>
+              ) : null}
+            </View>
+
+            <View style={styles.deleteWarningBox}>
+              <Ionicons name="warning" size={18} color="#B91C1C" />
+              <Text style={styles.deleteWarningText}>
+                Esta acción es irrevocable. Se eliminarán permanentemente el registro y sus datos vinculados.
+              </Text>
+            </View>
+
+            {isDeletingItem ? (
+              <View style={{ paddingVertical: 16, alignItems: 'center' }}>
+                <ActivityIndicator size="large" color="#DC2626" />
+                <Text style={{ marginTop: 8, color: '#64748B', fontWeight: '600', fontSize: 13 }}>
+                  Eliminando registro de Firebase...
+                </Text>
+              </View>
+            ) : (
+              <View style={styles.deleteActionsRow}>
+                <TouchableOpacity
+                  style={styles.deleteCancelBtn}
+                  onPress={() => {
+                    setShowDeleteModal(false);
+                    setItemToDelete(null);
+                  }}
+                >
+                  <Text style={styles.deleteCancelBtnText}>Cancelar</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={styles.deleteConfirmBtn}
+                  onPress={handleExecuteDelete}
+                >
+                  <Ionicons name="trash" size={16} color="#FFFFFF" />
+                  <Text style={styles.deleteConfirmBtnText}>Sí, Eliminar</Text>
+                </TouchableOpacity>
+              </View>
+            )}
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 };
@@ -1983,6 +2133,9 @@ const styles = StyleSheet.create({
     fontSize: 12,
   },
   approvedCommCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
     backgroundColor: '#FFFFFF',
     padding: 14,
     borderRadius: 12,
@@ -2498,6 +2651,158 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 13,
     fontWeight: '800',
+  },
+  actionBtnDeleteUser: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FEE2E2',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
+    gap: 4,
+    borderWidth: 1,
+    borderColor: '#FECACA',
+  },
+  deleteCommBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FEE2E2',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
+    gap: 4,
+    borderWidth: 1,
+    borderColor: '#FECACA',
+  },
+  deleteCommBtnText: {
+    color: '#DC2626',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  deleteReqBtn: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#FEF2F2',
+    paddingHorizontal: 12,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#FECACA',
+  },
+  deleteConfirmModalCard: {
+    alignItems: 'center',
+    padding: 24,
+    maxWidth: 420,
+    borderRadius: 20,
+  },
+  deleteIconCircle: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: '#FEE2E2',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: '#FECACA',
+  },
+  deleteModalTitle: {
+    fontSize: 18,
+    fontWeight: '900',
+    color: '#0F172A',
+    textAlign: 'center',
+    marginBottom: 6,
+  },
+  deleteModalSub: {
+    fontSize: 13,
+    color: '#64748B',
+    textAlign: 'center',
+    marginBottom: 14,
+  },
+  deleteTargetBox: {
+    width: '100%',
+    backgroundColor: '#F8FAFC',
+    borderRadius: 12,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    marginBottom: 14,
+    alignItems: 'center',
+  },
+  deleteTargetType: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#DC2626',
+    letterSpacing: 0.5,
+    marginBottom: 4,
+  },
+  deleteTargetName: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: '#0F172A',
+    textAlign: 'center',
+  },
+  deleteTargetExtra: {
+    fontSize: 12,
+    color: '#64748B',
+    marginTop: 2,
+    textAlign: 'center',
+  },
+  deleteWarningBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FEF2F2',
+    padding: 10,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#FECACA',
+    gap: 8,
+    marginBottom: 20,
+    width: '100%',
+  },
+  deleteWarningText: {
+    flex: 1,
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#991B1B',
+    lineHeight: 16,
+  },
+  deleteActionsRow: {
+    flexDirection: 'row',
+    gap: 12,
+    width: '100%',
+  },
+  deleteCancelBtn: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: 12,
+    backgroundColor: '#F1F5F9',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  deleteCancelBtnText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#475569',
+  },
+  deleteConfirmBtn: {
+    flex: 1.2,
+    flexDirection: 'row',
+    gap: 6,
+    paddingVertical: 12,
+    borderRadius: 12,
+    backgroundColor: '#DC2626',
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#DC2626',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  deleteConfirmBtnText: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#FFFFFF',
   },
 });
 
