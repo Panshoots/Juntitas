@@ -75,18 +75,20 @@ export default function App() {
   }, []);
 
   return (
-    <SafeAreaProvider style={styles.container}>
+    <SafeAreaProvider style={styles.outerContainer}>
       <ErrorBoundary>
         <ToastProvider>
           <AuthProvider>
-            <View style={styles.container}>
-              <StatusBar style="dark" />
-              <AppNavigator />
-              <ForceUpdateModal
-                visible={showUpdateModal}
-                updateInfo={updateInfo}
-                onClose={() => setShowUpdateModal(false)}
-              />
+            <View style={styles.outerContainer}>
+              <View style={styles.appContainer}>
+                <StatusBar style="dark" />
+                <AppNavigator />
+                <ForceUpdateModal
+                  visible={showUpdateModal}
+                  updateInfo={updateInfo}
+                  onClose={() => setShowUpdateModal(false)}
+                />
+              </View>
             </View>
           </AuthProvider>
         </ToastProvider>
@@ -96,11 +98,32 @@ export default function App() {
 }
 
 const styles = StyleSheet.create({
-  container: {
+  outerContainer: {
     flex: 1,
     height: (Platform.OS === 'web' ? '100vh' : '100%') as any,
     width: '100%',
+    backgroundColor: Platform.OS === 'web' ? '#F1F5F9' : '#F8FAFC',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  appContainer: {
+    flex: 1,
+    width: '100%',
+    maxWidth: Platform.OS === 'web' ? 480 : '100%',
+    height: (Platform.OS === 'web' ? '100vh' : '100%') as any,
     backgroundColor: '#F8FAFC',
+    overflow: 'hidden',
+    ...(Platform.OS === 'web'
+      ? {
+          shadowColor: '#0F172A',
+          shadowOffset: { width: 0, height: 4 },
+          shadowOpacity: 0.1,
+          shadowRadius: 24,
+          borderLeftWidth: 1,
+          borderRightWidth: 1,
+          borderColor: '#E2E8F0',
+        }
+      : {}),
   },
   errorContainer: {
     flex: 1,
