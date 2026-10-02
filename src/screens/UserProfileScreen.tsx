@@ -186,7 +186,11 @@ export const UserProfileScreen: React.FC = () => {
     if (res.success && res.url) {
       setActiveDiditSessionId(res.sessionId || '');
       setActiveDiditUrl(res.url);
-      showToast('Abriendo validación en Didit...', 'info');
+      if (res.isSandbox) {
+        showToast('Modo Demostración Didit. Puedes pulsar "Comprobar Estado" para validar.', 'info');
+      } else {
+        showToast('Abriendo validación en Didit...', 'info');
+      }
       await openDiditVerificationUrl(res.url);
     } else {
       showToast(res.message || 'No se pudo iniciar la sesión con Didit.', 'error');
@@ -1438,7 +1442,9 @@ export const UserProfileScreen: React.FC = () => {
                         <Text style={styles.diditActiveSessionTitle}>Sesión de Didit Iniciada</Text>
                       </View>
                       <Text style={styles.diditActiveSessionDesc}>
-                        Completa el escaneo en la ventana del navegador. Cuando hayas terminado, pulsa el botón para comprobar el resultado:
+                        {activeDiditSessionId.startsWith('didit_sandbox_')
+                          ? 'Modo Demostración (Sandbox): Puedes explorar la demo de Didit y luego pulsar el botón abajo para acreditar tu insignia en Juntitas:'
+                          : 'Completa el escaneo en la ventana del navegador. Cuando hayas terminado, pulsa el botón para comprobar el resultado:'}
                       </Text>
 
                       <TouchableOpacity 

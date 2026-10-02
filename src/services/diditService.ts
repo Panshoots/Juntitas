@@ -85,12 +85,12 @@ export const createDiditSession = async (
       const demoSessionId = `didit_sandbox_${userId}_${Date.now()}`;
       
       // Guardar sesión en el perfil del usuario para tracking
-      await saveSessionToUser(userId, demoSessionId, 'https://demo.didit.me');
+      await saveSessionToUser(userId, demoSessionId, 'https://demos.didit.me');
 
       return {
         success: true,
         sessionId: demoSessionId,
-        url: 'https://demo.didit.me',
+        url: 'https://demos.didit.me',
         isSandbox: true,
         message: 'Sesión Didit Sandbox lista. Para producción, agrega tu API Key de Didit.'
       };
